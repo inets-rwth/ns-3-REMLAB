@@ -1196,7 +1196,7 @@ void ThreeGppSpectrumPropagationLossModel::LoadInventoryWirelessInSite(std::stri
                     los = 1; // default REM LOS
                     break;
                   case -1:   // wiis no data
-                    los = 2; // default REM no data
+                    los = 0; // default REM no data
                     break;
                   default:
                     break; 

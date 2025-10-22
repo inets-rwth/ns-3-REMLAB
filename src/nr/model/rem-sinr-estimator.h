@@ -31,9 +31,9 @@ namespace ns3
  * PHY layer to accurately estimate the SINR if a specific antenna configuration on the 
  * UE and gNB side is chosen.
  * 
- * The class needs to implement:
+ * The class implements:
  *  + REM entry loading similar to ThreeGppChannelModel::GetRxRayData
- *     linkData might be passed directly from the coordinator node to avoid yet another full REM copy
+ *     linkData might be passed directly from the coordinator node to avoid a full REM copy
  *  + creation of the ThreeGppChannelMatrix similar to ThreeGppChannelModel::GetNewChannel
  *  + extension of channelMatrix with additional information similar to ThreeGppChannelModel::GetChannel
  *  + calculation of beamforming gain similar to ThreeGppSpectrumPropagationLossModel::DoCalcRxPowerSpectralDensity
@@ -227,6 +227,7 @@ public:
         Ptr<const MatrixBasedChannelModel::ChannelMatrix> channelMatrix,
         const ThreeGppAntennaArrayModel::ComplexVector &aW,
         const ThreeGppAntennaArrayModel::ComplexVector &bW);
+
     /**
      * Computes the long term component
      * \param channelMatrix the channel matrix H
@@ -305,7 +306,6 @@ public:
     //==========================================
     // Mapping of AoA and AoD values to sectors
     //==========================================
-
     struct SectorDegreeIndex
     {
       SectorDegreeIndex(double lb, double ub, uint16_t sI)
@@ -347,11 +347,13 @@ public:
         const double aodElevation);
 
     std::map<uint16_t, std::pair<BeamId, BeamId>> m_candidateGnbToBplMap;
-    // Resulting estimated SINR values for each gNB as map value.
-    // REM index as map key.
+    // Resulting estimated SINR values for each gNB as map value. REM index is used as a map key.
     std::map<uint16_t, std::pair<uint16_t, double>> m_gnbToRemIndexAndSnrMap;
     std::map<uint16_t, std::pair<uint16_t, double>> m_gnbToRemIndexAndSnrMapWithInterf;
 
+    //==========================================
+    // Antenna Parameters
+    //==========================================
     uint8_t ueNumRows = 4;
     uint8_t ueNumColumns = 4;
     uint8_t gNBNumRows = 8;

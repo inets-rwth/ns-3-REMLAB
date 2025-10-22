@@ -121,7 +121,6 @@ void
 BeamManager::ChangeBeamformingVector (const Ptr<const NetDevice>& device)
 {
   NS_LOG_FUNCTION(this);
-  // std::cout << "BeamManager::ChangeBeamformingVector: for device " << device->GetIfIndex() << std::endl;
 
   BeamformingStorage::iterator it = m_beamformingVectorMap.find (device);
   if (it == m_beamformingVectorMap.end ())
@@ -133,7 +132,6 @@ BeamManager::ChangeBeamformingVector (const Ptr<const NetDevice>& device)
       if (m_predefinedDirTxRxW.first.size() != 0)
         {
           m_antennaArray->SetBeamformingVector (m_predefinedDirTxRxW.first);
-          std::cout << "BeamManager::ChangeBeamformingVector: calling SetBeamformingVector for device " << device->GetIfIndex() << std::endl;
         }
       else
         {
@@ -144,7 +142,6 @@ BeamManager::ChangeBeamformingVector (const Ptr<const NetDevice>& device)
     {
       NS_LOG_INFO ("Beamforming vector found");
       m_antennaArray->SetBeamformingVector(it->second.first);
-      // std::cout << "BeamManager::ChangeBeamformingVector: bfv found. SetBeamformingVector for device " << device->GetIfIndex() << std::endl;
     }
 }
 

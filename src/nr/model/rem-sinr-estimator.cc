@@ -154,7 +154,38 @@ RemSinrEstimator::GetTypeId (void)
   static TypeId tid = TypeId ("ns3::RemSinrEstimator")
     .SetParent<Object> ()
     .SetGroupName ("nr")
-    .AddConstructor<RemSinrEstimator> ();
+    .AddConstructor<RemSinrEstimator> ()
+
+    .AddAttribute ("MaxWalkPathIndex",
+      "Maximum Walk Path Index (total amount of steps of a walk path)",
+      UintegerValue (1000),
+      MakeUintegerAccessor (&RemSinrEstimator::maxTraceIndexCM),
+      MakeUintegerChecker<uint32_t> ())
+
+    .AddAttribute ("CarrierFrequency",
+      "Carrier Frequency as set for the PHY Layer",
+      DoubleValue (28e9),
+      MakeDoubleAccessor (&RemSinrEstimator::m_frequency),
+      MakeDoubleChecker<double> ())
+
+    .AddAttribute ("WalkSamplingPeriod",
+      "Amount of time in seconds between every walk path coordinate change",
+      DoubleValue (0.25),
+      MakeDoubleAccessor (&RemSinrEstimator::walkSamplingPeriod),
+      MakeDoubleChecker<double> ())
+
+    .AddAttribute ("AntennaSeparation",
+      "AntennaSeparation",
+      DoubleValue (0.5),
+      MakeDoubleAccessor (&RemSinrEstimator::m_antennaSeparation),
+      MakeDoubleChecker<double> ())
+
+    .AddAttribute ("Scenario",
+      "The 3GPP scenario (RMa, UMa, UMi-StreetCanyon, InH-OfficeOpen, InH-OfficeMixed)",
+      StringValue ("UMi-StreetCanyon"),
+      MakeStringAccessor (&RemSinrEstimator::m_scenario),
+      MakeStringChecker ());
+
   return tid;
 }
 
@@ -289,20 +320,12 @@ RemSinrEstimator::InitializeAllParameters()
     uemobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
     uemobility.Install (ueNodes);
 
-    // For each gNB, need to store (dummy?) NetDevice and Create an antenna for it.
+    // For each gNB, need to store a dummy NetDevice and create an antenna for it.
     for (const auto& gnbLocation : gnbLocations)
     {
         Ptr<ThreeGppAntennaArrayModel> antennaGnb = m_gnbAntennaFactory.Create <ThreeGppAntennaArrayModel> ();
         // iNETs antenna config
         // horizontal - 9 for gNB, 18 for UE. Vertical 30 for both
-        if (antennaGnb == nullptr)
-        {
-            std::cout << "antennaGnb nullptr" << std::endl;
-        }
-        else
-        {
-            std::cout << "antennaGnb not a nullptr" << std::endl;
-        }
         antennaGnb->SetAttribute ("HorizontalBeamStep", DoubleValue (9));
         antennaGnb->SetAttribute ("VerticalBeamStep", DoubleValue (30));
 
@@ -385,7 +408,6 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
     uint16_t j = 0;
     m_candidateGnbToBplMap.clear();
     // m_nodeIds = 15 at this point
-    // std::cout << "m_nodeIds is " << m_nodeIds << std::endl;
     for (auto indexGnb : startIndices)
     {
         uint16_t nodeIndex = remEntry->m_txId.at(indexGnb) - 1;
@@ -395,24 +417,9 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
         double aodAzimuth = remEntry->m_aodAzimuth.at(indexGnb);
         double aodElevation = remEntry->m_aodElevation.at(indexGnb);
 
-        // Seems to be correct
-        std::cout << "RemSinrEstimator: Testing gNB " << remEntry->m_txId.at(indexGnb) << " as a serving gNB" << std::endl;
-        std::cout << " + AoA: " << aoaAzimuth << std::endl;
-        std::cout << " + AoA el: " << aoaElevation << std::endl;
-        std::cout << " + AoD: " << aodAzimuth << std::endl;
-        std::cout << " + AoD el: " << aodElevation << std::endl;
-        std::cout << " + PL: " << remEntry->m_pathloss.at(indexGnb) << std::endl;
-
         std::pair<BeamId, BeamId> bpls = MapAoaAodToSectors(aoaAzimuth, aoaElevation, aodAzimuth, aodElevation);
         m_candidateGnbToBplMap.emplace(remEntry->m_txId.at(indexGnb), bpls);
         // Change antenna configurations of each gNB
-        // SOnmething is worng here. bfv for gNB is of size 16
-        std::cout << " Mapped Beam IDs:" << std::endl;
-        std::cout << " - gNB: " << bpls.first << std::endl;
-        std::cout << " - UE: " << bpls.second << std::endl;
-
-        std::cout << " Creating a new bfv for antenna od NodeID " << gnbNodes.Get(/*j*/nodeIndex)->GetId() << std::endl;
-        std::cout << "  antenna address is " << m_deviceAntennaMap.at(gnbNodes.Get(/*j*/nodeIndex)->GetId())<< std::endl;
         BeamformingVector remBfvGnb = BeamformingVector (
             CreateDirectionalBfv (m_deviceAntennaMap.at(gnbNodes.Get(nodeIndex)->GetId()),
             bpls.first.GetSector (),
@@ -420,11 +427,6 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
             bpls.first
           );
         m_deviceAntennaMap.at(gnbNodes.Get(/*j*/nodeIndex)->GetId())->SetBeamformingVector(remBfvGnb.first);
-        std::cout << "  - changed bfv for gNB " << remEntry->m_txId.at(indexGnb) << " node id " << gnbNodes.Get(/*j*/nodeIndex)->GetId() << std::endl;
-        std::cout << "   - BeamId " << remBfvGnb.second << std::endl;
-        std::cout << "   - mapped bfv size " << remBfvGnb.first.size() << std::endl;
-        std::cout << "   - gNB bfv size is " << m_deviceAntennaMap.at(gnbNodes.Get(/*j*/nodeIndex)->GetId())->GetBeamformingVector().size() << std::endl;
-
         j++;
     }
     // At this point all available gNBs point beams towards the UE on their best paths.
@@ -440,8 +442,6 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
             bpl.second
           );
         m_deviceAntennaMap.at(ueNodes.Get(0)->GetId())->SetBeamformingVector(remBfvUE.first);
-        std::cout << "  - changed bfv for UE to test gNB " << gnbId << std::endl;
-        std::cout << "   - BeamId " << remBfvUE.second << std::endl;
 
         // Antennas are prepared for the test. Now need to create a dummy signal and measure SNR
 
@@ -463,15 +463,11 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
         }
         txPsd = NrSpectrumValueHelper::CreateTxPowerSpectralDensity  (m_txPower, rbIndexVector, sm);
 
-
-        std::cout << "RemSinrEstimator::EstimateSinrForUeLocation: getting rxPsd from gNB "
-                << gnbId << " w node ID " << gnbNodes.Get(gnbId-1)->GetId() << std::endl;
         Ptr<SpectrumValue> rxPsd = DoCalcRxPowerSpectralDensity(
                 remEntry,
                 txPsd,
                 gnbNodes.Get(gnbId-1)->GetObject<MobilityModel>(),
                 ueNodes.Get(0)->GetObject<MobilityModel>());
-        std::cout << "  # got DoCalcRxPowerSpectralDensity Integral(*rxPsd): " << Integral(*rxPsd) << std::endl; 
 
         // scale and convert to SINR
         double antennaGain = 9.94; // from NrSpectrumPhy::StartRx
@@ -480,11 +476,7 @@ RemSinrEstimator::EstimateSinrForUeLocation(Ptr<const LinkData> remEntry, Vector
         Ptr<SpectrumValue> m_noisePsd = NrSpectrumValueHelper::CreateNoisePowerSpectralDensity (m_noiseFigure, sm);
         SpectrumValue sinr = *(rxPsd)*antennaGainLinear / (*m_noisePsd);
         double snr = 10*log10( Sum(sinr) / (rbNum) );
-        std::cout << "  !!! SNR for gNB " << gnbId << " is " << snr << std::endl;
-        std::cout << "  Integral(*m_noisePsd): " << Integral(*m_noisePsd) << std::endl;
-        std::cout << "   Noise dB: " << 10* std::log10(Integral(*m_noisePsd)) << std::endl;
         m_gnbToRemIndexAndSnrMap.emplace(gnbId, std::make_pair(startIndices.at(gnbRemIndex), snr));
-        std::cout << "  emplacing REM index "<< startIndices.at(gnbRemIndex) << " for gNB " << gnbId << " with SNR " << snr << std::endl;        
         
         gnbRemIndex += 1;
     }
@@ -564,7 +556,7 @@ RemSinrEstimator::SetGnbLocations(const std::map<uint16_t, Vector>& gnblocs)
     for (auto gnbLoc : gnblocs)
     {
         Vector location{gnbLoc.second.x, gnbLoc.second.y, gnbLoc.second.z};
-        // FIXME: had to remove offset as PHY layer does not have them, but CO uses it for the recovery algo
+        // FIXME: had to remove offset as PHY layer does not have them, but LTE CO uses it for the recovery algorithm
         location.x = location.x - 128;
         location.y = location.y - 121;
         gnbLocations.push_back(location);
@@ -579,15 +571,6 @@ RemSinrEstimator::GetRxRayData(Ptr<const LinkData> linkData, Vector ueCords, Vec
     ueCords.x = std::round(ueCords.x);
     ueCords.y = std::round(ueCords.y);
 
-    // FIXME: had to remove offset as PHY layer does not have them, but CO uses it for the recovery algo
-    // gnbLocation.x -= 128;
-    // gnbLocation.y -= 121;
-
-    std::cout << "RemSinrEstimator::GetRxRayData: " << std::endl;
-    std::cout << "  std::round(ueCords.x): " << std::round(ueCords.x) << std::endl;
-    std::cout << "  std::round(ueCords.y): " << std::round(ueCords.y) << std::endl;
-    std::cout << "  gnbLocation: " << gnbLocation << std::endl;
-
     // get current eNB location
     uint16_t enbIndex1;
     for (unsigned int j = 0; j < gnbLocations.size(); j++)
@@ -598,8 +581,6 @@ RemSinrEstimator::GetRxRayData(Ptr<const LinkData> linkData, Vector ueCords, Vec
         break;
       }
     }
-
-    std::cout << "  enbIndex1:" << enbIndex1 << std::endl;
 
     Ptr<RxRayData> rxRayData;
     // tempRxRayData will contain only entries for the selected gNB
@@ -616,7 +597,6 @@ RemSinrEstimator::GetRxRayData(Ptr<const LinkData> linkData, Vector ueCords, Vec
       {
         if (linkData->m_txId[m] == (enbIndex1 + 1))
         {
-          std::cout << " RSE: GetRxRayData: preparing data for gNB " <<  linkData->m_txId[m] << std::endl;
           inventoryIndex = m;
           break;
         }
@@ -640,8 +620,6 @@ RemSinrEstimator::GetRxRayData(Ptr<const LinkData> linkData, Vector ueCords, Vec
         //tempRxRayData->m_path = 0;
         //for (int i = 0; i < rxRayData->m_path; i++)
   
-        std::cout << "  inventoryIndexEnd: " << inventoryIndexEnd << std::endl;
-        std::cout << "  inventoryIndex+1: " << inventoryIndex+1 << std::endl;
         for (int i = 0; i < (inventoryIndexEnd - inventoryIndex + 1); i++)
         {
           if (isLinkBlocked)
@@ -668,7 +646,6 @@ RemSinrEstimator::GetRxRayData(Ptr<const LinkData> linkData, Vector ueCords, Vec
           uint8_t idx = GetIndexForStrongestPath(tempRxRayData->m_pathloss);
           // as tempRxRayData contains entries from the selected gNB and entries are already sorted
           // this idx will probably always be 0
-          std::cout << "GetRxRayData: index of strongest path " << static_cast<int>(idx) << std::endl;
   
           doubleVector_t temp;
   
@@ -1164,7 +1141,6 @@ RemSinrEstimator::AddDevice (uint32_t nodeNum, Ptr<ThreeGppAntennaArrayModel> a)
 {
     NS_ASSERT_MSG (m_deviceAntennaMap.find (nodeNum) == m_deviceAntennaMap.end (), "Device is already present in the map");
     m_deviceAntennaMap.insert (std::make_pair (nodeNum, a));
-    std::cout << " RemSinrEstimator::AddDevice: added antenna " << a <<  " for NodeId " << nodeNum << std::endl;
 }
 
 Ptr<SpectrumValue>
@@ -1177,9 +1153,6 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
   NS_LOG_FUNCTION (this);
   uint32_t aId = a->GetObject<Node> ()->GetId (); // id of the node a
   uint32_t bId = b->GetObject<Node> ()->GetId (); // id of the node b
-  std::cout << " RemSinrEstimator::DoCalcRxPowerSpectralDensity: " << std::endl;
-  std::cout << " - aId: " << aId << std::endl; // this seems correct and corresponds to gNBs
-  std::cout << " - bId: " << bId << std::endl;
 
   uint32_t traceIndex = 0;
   uint16_t imsi;
@@ -1188,11 +1161,6 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
 
     bool aIsEnb = false;
     bool bIsEnb = false;
-
-    std::cout << "RemSinrEstimator::DoCalcRxPowerSpectralDensity: "<< std::endl;
-    // for some reason gnb position is 0
-    std::cout << " a->GetPosition(): " << a->GetPosition() << std::endl;
-    std::cout << " b->GetPosition(): " << b->GetPosition() << std::endl;
 
     traceIndex = GetTraceIndex ();
 
@@ -1214,13 +1182,11 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
         }
     }
 
-    // FIXME we are stuck here,
     if ((aIsEnb && bIsEnb) || (!aIsEnb && !bIsEnb))
     {
         NS_LOG_INFO ("UE<->UE or gNB<->gNB, returning");
         *rxPsd = *rxPsd * 1e-11;
         
-        std::cout << "  # (aIsEnb && bIsEnb) || (!aIsEnb && !bIsEnb). Returning *rxPsd * 1e-11 " << std::endl;
         return rxPsd;
     }
 
@@ -1232,19 +1198,16 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
   Ptr<const ThreeGppAntennaArrayModel> aAntenna = m_deviceAntennaMap.at (aId);
   // !!!! Wrong antenna fetched here
   NS_LOG_DEBUG ("a node " << a->GetObject<Node> () << " antenna " << aAntenna);
-  std::cout << "a node " << a->GetObject<Node> ()->GetId() << " antenna " << aAntenna << std::endl;
 
   // retrieve the antenna of the device b
   NS_ASSERT_MSG (m_deviceAntennaMap.find (bId) != m_deviceAntennaMap.end (), "Antenna not found for device " << bId);
   Ptr<const ThreeGppAntennaArrayModel> bAntenna = m_deviceAntennaMap.at (bId);
   NS_LOG_DEBUG ("b node " << bId << " antenna " << bAntenna);
-  std::cout << "b node " << bId << " antenna " << bAntenna << std::endl;
 
   if (aAntenna->IsOmniTx () || bAntenna->IsOmniTx () )
     {
       NS_LOG_LOGIC ("Omni transmission, do nothing.");
       *rxPsd = *rxPsd * 1e-22;
-      std::cout << "  # aAntenna->IsOmniTx () || bAntenna->IsOmniTx (). Returning *rxPsd * 1e-22 " << std::endl;
 
       return rxPsd;
     }
@@ -1269,7 +1232,6 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
     NS_LOG_INFO ("No RayTrace data between " << a->GetPosition () << " and " << b->GetPosition ());
     //The ryatracing channel does not have any pathloss, therefore when there is no data we need to supress the ouput signal strength
     *rxPsd = *rxPsd * 1e-22;
-    std::cout << "  # channelMatrix->m_numCluster == 0. Returning *rxPsd * 1e-22 " << std::endl;
 
     return rxPsd;
   }
@@ -1278,17 +1240,8 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
 
   //ChangeAntennaConfigurations(m_rxRayData);
 
-  ThreeGppAntennaArrayModel::ComplexVector aW = aAntenna->GetBeamformingVector (); // has 16 el instead of 64
+  ThreeGppAntennaArrayModel::ComplexVector aW = aAntenna->GetBeamformingVector ();
   ThreeGppAntennaArrayModel::ComplexVector bW = bAntenna->GetBeamformingVector ();
-
-  // Maybe these complex vectors can be mocked?
-  // for ex, keep two antenna instances and change their beam ID according to desired config in REM
-  // this should be enough to give the beamforming vector
-  // I also need antennas for the channelMatrix = GetChannel call
-
-  // It seems like aW and bW are same
-  std::cout << "RemSinrEstimator::DoCalcRxPowerSpectralDensity: aW "<< aW.size() << std::endl; // must be 64
-  std::cout << "RemSinrEstimator::DoCalcRxPowerSpectralDensity: bW "<< bW.size() << std::endl; // must be 16
 
   // retrieve the long term component
   ThreeGppAntennaArrayModel::ComplexVector longTerm;
@@ -1298,10 +1251,7 @@ RemSinrEstimator::DoCalcRxPowerSpectralDensity (
   // apply the beamforming gain
   bfPsd = CalcBeamformingGain (rxPsd, longTerm, aW, bW, channelMatrix, 1); // 1m/s. not used anyway
   
-  std::cout << "  # got beamforming gain dB " << 10* std::log10(Integral(*bfPsd)) << std::endl;
-  
   Ptr<SpectrumValue> bfGain = Create<SpectrumValue>((*bfPsd) / (*rxPsd));
-  std::cout << "  # got bfGain, returning bfPsd" << std::endl;
 
   return bfPsd;
 }
@@ -1461,7 +1411,6 @@ RemSinrEstimator::CalcLongTerm (Ptr<const MatrixBasedChannelModel::ChannelMatrix
   // !!!!!!!!!!!!!!! sAntenna here is 16 but should be 64!!!!!!!!
   uint16_t sAntenna = static_cast<uint16_t> (sW.size ());
   uint16_t uAntenna = static_cast<uint16_t> (uW.size ());
-  std::cout << "RemSinrEstimator::CalcLongTerm sAntenna: " << sAntenna << " uAntenna: " << uAntenna << std::endl;
 
   NS_LOG_DEBUG ("CalcLongTerm with sAntenna " << sAntenna << " uAntenna " << uAntenna);
   //store the long term part to reduce computation load

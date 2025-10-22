@@ -66,50 +66,10 @@ NrGnbPhy::NrGnbPhy ():
   NS_LOG_FUNCTION (this);
   m_enbCphySapProvider = new MemberLteEnbCphySapProvider<NrGnbPhy> (this);
   IAisPerformed = true;
-  // possibly remove ISisPerformed variable in this class. Probably remove m_omniFallback as well.
 
-  // TODO: this mapping has to be verified and maybe shifted clockwise by half
-  // With such mapping the SINR is less than baseline by 40 dB and falls below max rate threshold
-  // m_sectorDegreeMap[{0, 9}] = 10;
-  // m_sectorDegreeMap[{9, 18}] = 11;
-  // m_sectorDegreeMap[{18, 27}] = 12;
-  // m_sectorDegreeMap[{27, 36}] = 13;
-  // m_sectorDegreeMap[{36, 45}] = 14;
-  // m_sectorDegreeMap[{45, 54}] = 15;
-  // m_sectorDegreeMap[{54, 63}] = 16;
-  // m_sectorDegreeMap[{63, 72}] = 17;
-  // m_sectorDegreeMap[{72, 81}] = 18;
-  // m_sectorDegreeMap[{81, 90}] = 19;
-  // m_sectorDegreeMap[{90, 99}] = 20;
-  // m_sectorDegreeMap[{99, 108}] = 19;
-  // m_sectorDegreeMap[{108, 117}] = 18;
-  // m_sectorDegreeMap[{117, 126}] = 17;
-  // m_sectorDegreeMap[{126, 135}] = 16;
-  // m_sectorDegreeMap[{135, 144}] = 15;
-  // m_sectorDegreeMap[{144, 153}] = 14;
-  // m_sectorDegreeMap[{153, 162}] = 13;
-  // m_sectorDegreeMap[{162, 171}] = 12;
-  // m_sectorDegreeMap[{171, 180}] = 11;
-  // m_sectorDegreeMap[{180, 189}] = 10;
-  // m_sectorDegreeMap[{189, 198}] = 9;
-  // m_sectorDegreeMap[{198, 207}] = 8;
-  // m_sectorDegreeMap[{207, 216}] = 7;
-  // m_sectorDegreeMap[{216, 225}] = 6;
-  // m_sectorDegreeMap[{225, 234}] = 5;
-  // m_sectorDegreeMap[{234, 243}] = 4;
-  // m_sectorDegreeMap[{243, 252}] = 3;
-  // m_sectorDegreeMap[{252, 261}] = 2;
-  // m_sectorDegreeMap[{261, 270}] = 1;
-  // m_sectorDegreeMap[{270, 279}] = 0;
-  // m_sectorDegreeMap[{279, 288}] = 1;
-  // m_sectorDegreeMap[{288, 297}] = 2;
-  // m_sectorDegreeMap[{297, 306}] = 3;
-  // m_sectorDegreeMap[{306, 315}] = 4;
-  // m_sectorDegreeMap[{315, 324}] = 5;
-  // m_sectorDegreeMap[{324, 333}] = 6;
-  // m_sectorDegreeMap[{333, 342}] = 7;
-  // m_sectorDegreeMap[{342, 351}] = 8;
-  // m_sectorDegreeMap[{351, 360}] = 9;
+  // ================================================================
+  // REMLAB: Mapping of azimuth and elevation angles to antenna sectors
+  // ================================================================
 
   m_sectorDegreeMap[{0, 4.5}] = 10;
   m_sectorDegreeMap[{355.5, 360}] = 10;
@@ -323,14 +283,14 @@ NrGnbPhy::GetTypeId (void)
                    MakeDoubleAccessor (&NrGnbPhy::SetGnbVerticalAngleStep),
                    MakeDoubleChecker<double> ())
     .AddAttribute ("GnbHorizontalAngleStep",
-                   "Angle step that will be used for sweeo at azimuth",
+                   "Angle step that will be used for sweep at azimuth",
                    DoubleValue (9),
                    MakeDoubleAccessor (&NrGnbPhy::SetGnbHorizontalAngleStep),
                    MakeDoubleChecker<double> (1.0, 90.0))
-    // Location-aided Beamforming
-    .AddAttribute ("UseLocationAidedBeamforming", "Use REM-based cell and beam selection for UEs and gNBs",
+    // Location-aided Beam Management
+    .AddAttribute ("UseREMLAB", "Use REM-based cell and beam selection for UEs and gNBs",
                    BooleanValue (false),
-                   MakeBooleanAccessor (&NrGnbPhy::m_useLABF),
+                   MakeBooleanAccessor (&NrGnbPhy::m_useREMLAB),
                    MakeBooleanChecker ())
     ;
   return tid;
@@ -774,14 +734,12 @@ NrGnbPhy::SetSubChannels (const std::vector<int> &rbIndexVector)
   m_spectrumPhy->SetTxPowerSpectralDensity (txPsd);
 }
 
-// labf: TODO: check if this somehow depends on SSB or CSI RS.
-// If not -> good, as we may re-use these measurement reports for threshold decision in LTE CO
 void 
 NrGnbPhy::UpdateUeSinrEstimate ()
 {
-  // we only send this report if not in IA right now and not in Omni config.
+  // We only send this report if not in IA right now and not in Omni config.
   // These measurements have nothing to do with SSBs and CSI-RS
-  // TODO: are they standard-compliant? What message is this?
+
   if (!IAisPerformed || m_omniFallback)
   {
     m_sinrMap.clear ();
@@ -924,23 +882,12 @@ NrGnbPhy::QueueSSB (bool pushFront)
   {
     m_ctrlMsgs.push_back(pssMsg);
   }
-  //test
-  //std::cout << "NrGnbPhy::QueueSSB: sending SSB from cell ID " << cellId << std::endl; 
-  // if (GetBeamId(1).GetSector() != 0)
-  //   std::cout << " NrGnbPhy::QueueSSB: currently used beam ID for rnti 1 is " << GetBeamId(1) << std::endl;
-  // seems to be always 0
-  //std::cout << " NrGnbPhy::QueueSSB: bwp ID is " << static_cast<int>(GetBwpId ()) << std::endl;
-  // seems to be directly emptied, so the size is not surpassign 1
-  // std::cout << " NrGnbPhy::QueueSSB: ctrl msg queue size is now: " << m_ctrlMsgs.size() << std::endl;
 }
 
 void 
 NrGnbPhy::QueueCSIRS (bool pushFront, uint64_t imsi)
 {
   NS_LOG_FUNCTION (this);
-
-  // if (GetCellId() != uint16_t(6))
-  //   return;
 
   Ptr<NrCSIRSMessage> csiRSMsg = Create<NrCSIRSMessage> ();
   csiRSMsg->SetCellId (GetCellId ());
@@ -1523,9 +1470,8 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
   Time varTtiPeriod = GetSymbolPeriod () * dci->m_numSym;
   std::pair<std::pair<bool, bool>, std::pair<uint64_t, uint8_t>> boolImsiIndexPair = {{false, false}, {0, 0}};
 
-  // skip Queuing SSB is we use REM
-  // if (m_realisticIA && !m_useLABF)
-  if (m_realisticIA)
+  // skip Queuing SSB is we use REMLAB
+  if (m_realisticIA && !m_useREMLAB)
   {
     if (m_phySapUser->IsSSBRequired (GetCurrentSfnSf ()) && 
      (m_currSymStart == 2 || m_currSymStart == 8))
@@ -1536,22 +1482,19 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
         {
           if (m_ctrlMsgs.size() == 0)
             {
-              // std::cout << "NrGnbPhy::DlCtrl: queueing SSB\n" << " " << std::endl;
               QueueSSB (false);
             }
           else
             {
-              //printf("NrGnbPhy::DlCtrl: queueing SSB with push front\n");
               QueueSSB (true);
             }
-            // std::cout << Simulator::Now().GetSeconds() << ": NrGnbPhy:: SSB queued" << std::endl;
         }
         
         
       }
     
     // Send CSI-RS only if we enabled RLM, not performing IA and not useing Locaiton-aided Beamforming
-    if (m_rlmOn && !IAisPerformed && !m_useLABF)
+    if (m_rlmOn && !IAisPerformed && !m_useREMLAB)
     {
       boolImsiIndexPair = m_phySapUser->IsCSIRSRequired (GetCurrentSfnSf ());
 
@@ -1559,12 +1502,10 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
       {
         if (m_ctrlMsgs.size() == 0)
         {
-          //printf("NrGnbPhy::DlCtrl: queueing CSIRS\n");
           QueueCSIRS(false, boolImsiIndexPair.second.first);
         }
         else
         { 
-          //printf("NrGnbPhy::DlCtrl: queueing CSIRS with push front\n");
           QueueCSIRS(true, boolImsiIndexPair.second.first);
         }
       }
@@ -1588,8 +1529,8 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
       Ptr<NrCSIRSMessage> csiRSMsg;
       Ptr<NrPssMessage> pssMsg;
 
-      // labf; we need to avoid this when using REM?
-      if (IAisPerformed)
+      // REMLAB: prevent antenna adjustments if we use REMLAB
+      if (IAisPerformed && !m_useREMLAB)
       {
         for (std::map<uint64_t, Ptr<NetDevice>>::iterator ue = m_ueAttachedImsiMap.begin (); 
                                                           ue != m_ueAttachedImsiMap.end ();
@@ -1597,11 +1538,9 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
         {
           Ptr<NrUeNetDevice> ueNetDev = DynamicCast<NrUeNetDevice> (ue->second);
           ueNetDev->GetPhy (0)->AdjustAntennaForBeamSweep ();
-          // std::cout << "NrGnbPhy::DlCtrl: " << "UE requested to adjust antenna for beam sweep." << std::endl;
         }
       }
-      // labf: do we need this?
-      if (!IAisPerformed && (m_ueAttachedImsiMap.size() != 0))
+      if (!IAisPerformed && (m_ueAttachedImsiMap.size() != 0) && !m_useREMLAB)
       {
         for (std::map<uint64_t, Ptr<NetDevice>>::iterator ue = m_ueAttachedImsiMap.begin (); 
                                                           ue != m_ueAttachedImsiMap.end ();
@@ -1660,8 +1599,7 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
           BeamId currentBeam = m_beamsTbRLM.at(boolImsiIndexPair.second.first).at(boolImsiIndexPair.second.second).second;
 
           m_sfnBeamIdMap.insert ({sfnSfKey,currentBeam});
-          // FIXME: was this commented out by me?
-          // - yes
+
           // m_beamManager->SetSector (currentBeam.GetSector (),
           //                           currentBeam.GetElevation ());
           Ptr<SpectrumValue> rxPsd = CalculateRxPsdToUe (
@@ -1677,12 +1615,7 @@ NrGnbPhy::DlCtrl (const std::shared_ptr<DciInfoElementTdma> &dci)
           csiRSMsg->SetDestinationImsi (boolImsiIndexPair.second.first);
 
           NS_ASSERT_MSG(m_ueAttachedImsiMap.find(boolImsiIndexPair.second.first) != m_ueAttachedImsiMap.end(), "UE with IMSI " << boolImsiIndexPair.second.first << " could not be found. Change implementation!!!");
- 
-          //test
-          // std::cout  << m_spectrumPropagationLossModel->GetBestBplForPosition(UePosition) << std::endl;
-          // compare to currentBeam?
 
-          // LAMM: comment this out?
           Simulator::Schedule (GetSymbolPeriod () * 2 - NanoSeconds (1.0),
                               &BeamManager::ChangeBeamformingVector,
                               m_beamManager,
@@ -1714,11 +1647,6 @@ NrGnbPhy::UlCtrl(const std::shared_ptr<DciInfoElementTdma> &dci)
                 "-" << static_cast<uint32_t> (dci->m_symStart + dci->m_numSym - 1) <<
                 " start " << Simulator::Now () <<
                 " end " << Simulator::Now () + varTtiPeriod);
-  // std::cout << "NrGnbPhy::UlCtrl: " << "ENB RXng UL CTRL frame " << m_currentSlot <<
-  //               " symbols "  << static_cast<uint32_t> (dci->m_symStart) <<
-  //               "-" << static_cast<uint32_t> (dci->m_symStart + dci->m_numSym - 1) <<
-  //               " start " << Simulator::Now () <<
-  //               " end " << Simulator::Now () + varTtiPeriod << std::endl; 
   return varTtiPeriod;
 }
 
@@ -1897,7 +1825,6 @@ NrGnbPhy::SendDataChannels (const Ptr<PacketBurst> &pb, const Time &varTtiPeriod
         if (dci->m_rnti == ueRnti && GetCellId () == ueCellId)
           {
             NS_ABORT_MSG_IF(m_beamManager == nullptr, "Beam manager not initialized");
-            // LAMM: comment this out?
             m_beamManager->ChangeBeamformingVector(m_deviceMap.at (i));
             if (!m_realisticIA  && m_deviceMap.size() != 0)
             {
@@ -2035,8 +1962,6 @@ NrGnbPhy::PhyCtrlMessagesReceived (const Ptr<NrControlMessage> &msg)
 {
   if (m_imsiOptimalBeamId.find(1) != m_imsiOptimalBeamId.end() && prevSector != m_imsiOptimalBeamId.at(1).GetSector())
   {
-    std::cout << GetCellId() << ": NrGnbPhy Beam ID changed to: sector " << m_imsiOptimalBeamId.at(1).GetSector() << " elev: " << m_imsiOptimalBeamId.at(1).GetElevation() << std::endl;
-    std::cout << GetCellId() << ": Previous Beam ID sector: " << prevSector << std::endl;
     prevSector = m_imsiOptimalBeamId.at(1).GetSector();
   }
   NS_LOG_FUNCTION (this);
@@ -2077,15 +2002,10 @@ NrGnbPhy::PhyCtrlMessagesReceived (const Ptr<NrControlMessage> &msg)
     }
   else if (msg->GetMessageType () == NrControlMessage::CSI_REPORT)
   {
-    std::cout << GetCellId() << ": NrGnbPhy: got CSI report " << std::endl;
     Ptr<NRCSIReportMessage> csiReportMsg = DynamicCast<NRCSIReportMessage> (msg);
 
     auto imsiOfCSI = m_enbCphySapUser->GetImsiFromRnti (csiReportMsg->GetRnti ());
  
-    // These two give different beams. m_beamManager->GetBeamId(m_ueAttachedImsiMap.at(imsiOfCSI)) looks like the correct one
-    std::cout << GetCellId() << ": NrGnbPhy: current BeamId for imsi " << imsiOfCSI << ": " << m_beamManager->GetBeamId(m_ueAttachedImsiMap.at(imsiOfCSI)) << std::endl;
-    //std::cout << GetCellId() << ": NrGnbPhy: Beam ID from m_currBeamformingVector: " << m_beamManager->GetBeamId(m_currBeamformingVector) << std::endl;
-
     m_csiRSTbReported.erase(imsiOfCSI);
     m_csiRSTbReported.insert ({imsiOfCSI, {}});
 
@@ -2136,13 +2056,8 @@ NrGnbPhy::PhyCtrlMessagesReceived (const Ptr<NrControlMessage> &msg)
           }
         }
 
-        // LAMM: comment this out?
         if (maxSNRBeamId != m_beamManager->GetBeamId (m_ueAttachedImsiMap.at(imsiOfCSI)))
           {
-            std::cout << "NrGnbPhy: calling createBFV from PhyCtrlMessagesReceived" << std::endl;
-            std::cout << " gNB adjusted beam from " << m_beamManager->GetBeamId (m_ueAttachedImsiMap.at(imsiOfCSI));
-            std::cout << "  to " << maxSNRBeamId.GetSector () << " " << maxSNRBeamId.GetElevation () << std::endl;
-
             BeamformingVector maxSNRBfv = BeamformingVector (
               CreateDirectionalBfv (m_beamManager->GetAntennaArray (),
               maxSNRBeamId.GetSector (),
@@ -2150,8 +2065,8 @@ NrGnbPhy::PhyCtrlMessagesReceived (const Ptr<NrControlMessage> &msg)
               maxSNRBeamId
             );
             // saving the beamforming vector for particular device
-            // only save and change beams if not using LABF
-            if (!m_useLABF)
+            // only save and change beams if not using REMLAB
+            if (!m_useREMLAB)
             {
               m_beamManager->SaveBeamformingVector (maxSNRBfv, m_ueAttachedImsiMap.at (imsiOfCSI));
               // and then commanding to use it for this device
@@ -2465,7 +2380,6 @@ NrGnbPhy::GetIAState ()
   return m_IAcontinues;
 }
 
-// LAMM: need a new method similar to this one to set a location based beam
 void 
 NrGnbPhy::DoSetOptimalGnbBeamForImsi (uint64_t imsi, SfnSf startingSfn, std::vector<uint16_t> optimalBeamIndex, bool isServingCell, uint8_t numOfBeamsTbRlm)
 {
@@ -2479,7 +2393,7 @@ NrGnbPhy::DoSetOptimalGnbBeamForImsi (uint64_t imsi, SfnSf startingSfn, std::vec
     beamTbRLMVector.emplace_back (std::make_pair(GetCellId(), m_beamVectorMapGnb.at (actualIndex)));
   }
 
-  // onyl do the following if CSI-RS should be send towards that UE. This includes UEs attached to this gNB.
+  // only do the following if CSI-RS should be send towards that UE. This includes UEs attached to this gNB.
   if (numOfBeamsTbRlm > 0)
   {
     if (m_imsiOptimalBeamId.find(imsi) != m_imsiOptimalBeamId.end())
@@ -2506,23 +2420,15 @@ NrGnbPhy::DoSetOptimalGnbBeamForImsi (uint64_t imsi, SfnSf startingSfn, std::vec
       m_beamSweepTrace(params);
     }
 
-    // This seems to be executed only once during 240 seconds of simulation. Seemingly only after IA
-    std::cout << GetCellId() << ": NrGnbPhy: calling createBFV from doSetOptimalGnbBeamForImsi" << std::endl;
     m_currBeamformingVector = BeamformingVector(
         CreateDirectionalBfv(m_beamManager->GetAntennaArray(),
                              m_imsiOptimalBeamId.at(imsi).GetSector(),
                              m_imsiOptimalBeamId.at(imsi).GetElevation(), true),
         m_imsiOptimalBeamId.at(imsi));
-    std::cout << GetCellId() << ":Optimal beam set to sector " << m_imsiOptimalBeamId.at(imsi).GetSector() << " elev: " << m_imsiOptimalBeamId.at(imsi).GetElevation() << std::endl;
-    // std::cout << "NrGnbPhy Beam ID: sector " << m_imsiOptimalBeamId.at(1).GetSector() << " elev: " << m_imsiOptimalBeamId.at(1).GetElevation() << std::endl;
 
-    // TODO: lamm: If this is simply ocmmented ut, no IA can be done?
     m_beamManager->SetSector(m_imsiOptimalBeamId.at(imsi).GetSector(),
                              m_imsiOptimalBeamId.at(imsi).GetElevation());
     // saving the beamforming vector for particular device
-    // TODO: labf: this should be commented out too?
-    // Seems like when this is commented out, we can not connect to coordinator and an assertion in lte-enb-rrc is failed
-    // Maybe because this is the first place where we set a beam to a ue NetDevice
     m_beamManager->SaveBeamformingVector(m_currBeamformingVector, m_ueAttachedImsiMap.find(imsi)->second);
 
     SfnSf dlSfnSf = GetCurrentSfnSf();
@@ -2538,17 +2444,12 @@ NrGnbPhy::DoSetOptimalGnbBeamForImsi (uint64_t imsi, SfnSf startingSfn, std::vec
                            (dlSfnSf.GetSlotPerSubframe() - currentSn - 1);
       m_phySapUser->SetMACCSIRSTimer(true);
 
-      // This was never executed during at least 70 seconds of sim with 20 UE
-      std::cout << "NrGnbPhy::DoSetOptimalGnbBeamForImsi is called and now schedules NrGnbPhy::SetCSIRSTimer for " << imsi << std::endl;
       Simulator::Schedule(totalNoOfSlot * GetSymbolPeriod() * GetSymbolsPerSlot(),
                           &NrGnbPhy::SetCSIRSTimer,
                           this,
                           false);
     }
   }
-  
-  // std::cout << "NrGnbPhy::DoSetOptimalGnbBeamForImsi: calling DoGetCurrentGnbBeamIdOfImsi" << std::endl;
-  // DoGetCurrentGnbBeamIdOfImsi(imsi);
 }
 
 void 
@@ -2715,15 +2616,7 @@ NrGnbPhy::CalculateRxPsdToUe (Ptr<NrUeNetDevice> ueNetDevice, bool isUpdateSinr)
       else
       {
         uePhy->GetBeamManager ()->ChangeBeamformingVector (m_netDevice);
-        // This is handeld by REM-based beam management
-        // Set the current bfv to serve the ueNetDevice?
-        // std::cout << "NrGnbPhy: from CalculateRxPsdToUe: Set the current bfv to serve the ueNetDevice?" << std::endl;
         m_beamManager->ChangeBeamformingVector (ueNetDevice);
-
-        // spam and seems to be same as above
-        // std::cout << "-NrGnbPhy: current BeamId for imsi " << 1 << ": " << m_beamManager->GetBeamId(m_ueAttachedImsiMap.at(1)) << std::endl;
-        // std::cout << "-NrGnbPhy: Beam ID from m_currBeamformingVector: " << m_beamManager->GetBeamId(m_currBeamformingVector) << std::endl;
-
       }
   }
 
@@ -2814,9 +2707,6 @@ NrGnbPhy::DoUpdateBeamsTBRLM (uint64_t imsi, std::vector<uint16_t> optimalBeamIn
   }
 
   m_beamsTbRLM.insert({imsi, tmp_beamsTbRLM});
-
-  // std::cout << "NrGnbPhy::DoUpdateBeamsTBRLM: calling DoGetCurrentGnbBeamIdOfImsi" << std::endl;
-  // DoGetCurrentGnbBeamIdOfImsi(imsi);
 }
 
 void 
@@ -2845,12 +2735,9 @@ NrGnbPhy::GetGnbVerticalAngleStep () const
 
 void NrGnbPhy::DoUpdateSuboptimalCSIRSBeams(uint64_t imsi, uint16_t sector, double elevation)
 {
-  std::cout << GetCellId() << ": NrGnbPhy: calling createBFV from DoUpdateSuboptimalCSIRSBeams" << std::endl;
-
-  // labf
-  // If we use Location-aided Beamforming, beam selection is controlled by REM.
-  // Also, this should never be reached in LABF, as we do not send CSIRS.
-  if (m_useLABF)
+  // If we use Location-aided Beam Management, beam selection is controlled by REM.
+  // Also, this should never be reached in REMLAB, as we do not send CSIRS.
+  if (m_useREMLAB)
     return;
 
   BeamId maxCSIRSBeamId = BeamId(sector, elevation);
@@ -2865,83 +2752,60 @@ void NrGnbPhy::DoUpdateSuboptimalCSIRSBeams(uint64_t imsi, uint16_t sector, doub
 
 void NrGnbPhy::DoForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg)
 {
-  // delete or reuse this
+  // REMLAB: Dummy method to satisfy the template concept for lte-enb-cphy-sap
 }
 
 void NrGnbPhy::DoSetREMBeam(LteRrcSap::LinkData linkData)
 {
-  //test for default config
-  // return;
- 
-  std::cout << " *!*! NrGnbPhy::DoSetREMBeam: adjusting the beam for IMSI " << linkData.imsi << std::endl;
-  //SetBeamformingVector();
+  NS_LOG_DEBUG(GetCellId() << "DoSetREMBeam: adjusting the beam for IMSI " << linkData.imsi << std::endl);
 
   // Need a Ptr<NetDevice> to query the beam manager for specific beam
-  std::cout << "   m_ueAttachedImsiMap size is " << m_ueAttachedImsiMap.size() << std::endl;
-  Ptr<NetDevice> ueNetDevice = m_ueAttachedImsiMap.at(linkData.imsi); // for some reason map is now empty
-  if (ueNetDevice != nullptr)
-    std::cout << "  NrGnbPhy::DoSetREMBeam: NetDevice Ptr is not a nullptr" << std::endl;
+  Ptr<NetDevice> ueNetDevice = m_ueAttachedImsiMap.at(linkData.imsi);
 
-  std::cout << "  Current BeamId for IMSI: " << linkData.imsi << ". " << m_beamManager->GetBeamId(ueNetDevice) << std::endl;
-  // std::cout << "  - " << m_beamManager->GetBeamId(ueNetDevice).GetSector()
+  NS_LOG_DEBUG("  Current BeamId for IMSI: " << linkData.imsi << ". " << m_beamManager->GetBeamId(ueNetDevice) << std::endl);
 
   double bestAoDelevation = linkData.bestAoDElevation;
   double bestAoDAzimuth = linkData.bestAoDAzimuth;
-  std::cout << "   bestAoDelevation: " << bestAoDelevation << std::endl;
-  std::cout << "   bestAoDazimuth: " << bestAoDAzimuth << std::endl;
-  std::cout << "   bestAoAelevation: " << linkData.bestAoAElevation << std::endl;
-  std::cout << "   bestAoAazimuth: " << linkData.bestAoAAzimuth << std::endl;
+  NS_LOG_DEBUG("   bestAoDelevation: " << bestAoDelevation << std::endl);
+  NS_LOG_DEBUG("   bestAoDazimuth: " << bestAoDAzimuth << std::endl);
+  NS_LOG_DEBUG("   bestAoAelevation: " << linkData.bestAoAElevation << std::endl);
+  NS_LOG_DEBUG("   bestAoAazimuth: " << linkData.bestAoAAzimuth << std::endl);
 
   uint16_t remSector{0};
   double remElevation{90.};
-
-  if (m_imsiOptimalBeamId.find(linkData.imsi) != m_imsiOptimalBeamId.end())
-  {
-    std::cout << " m_imsiOptimalBeamId.at(imsi).GetSector(): " << m_imsiOptimalBeamId.at(linkData.imsi).GetSector() << std::endl;
-    std::cout << " m_imsiOptimalBeamId.at(imsi).GetElevation(): " << m_imsiOptimalBeamId.at(linkData.imsi).GetElevation() << std::endl;
-  }
-  else
-  {
-    std::cout << " --- m_imsiOptimalBeamId does not have info for imsi" << std::endl;
-  }
 
   for (const auto& entry : m_sectorDegreeMap)
   {
     if (bestAoDAzimuth >= entry.first.first && bestAoDAzimuth <= entry.first.second)
     {
       remSector = entry.second;
-      std::cout << "AoD azimuth " << bestAoDAzimuth << " maps to sector " << (unsigned)entry.second << std::endl;
-      std::cout << "remSector is " << remSector << std::endl;
+      NS_LOG_DEBUG("AoD azimuth " << bestAoDAzimuth << " maps to sector " << (unsigned)entry.second << std::endl);
+      NS_LOG_DEBUG("remSector is " << remSector << std::endl);
       break;
     }
   }
 
-  // I think for elevation the comparison is wrong due to negative numbers
   for (const auto& entry : m_elevationDegreeMap)
   {
     if (bestAoDelevation <= entry.first.first && bestAoDelevation >= entry.first.second)
     {
       remElevation = entry.second;
-      std::cout << "AoD elevation " << bestAoDelevation << " maps to elevation " << (double)entry.second << std::endl;
-      std::cout << "remElevation is " << remElevation << std::endl;
+      NS_LOG_DEBUG("AoD elevation " << bestAoDelevation << " maps to elevation " << (double)entry.second << std::endl);
+      NS_LOG_DEBUG("remElevation is " << remElevation << std::endl);
       break;
     }
   }
 
   // Need to set the beam for a particular user
 
-  // If sector AND elevation are already correct , do not continue
+  // If sector AND elevation are already correct, do not continue
   if ((m_imsiOptimalBeamId.find(linkData.imsi) != m_imsiOptimalBeamId.end()) && (m_imsiOptimalBeamId.at(linkData.imsi).GetSector() == remSector)
-      // FIXME: comparing double values
       && (m_imsiOptimalBeamId.at(linkData.imsi).GetElevation() == remElevation))
   {
-    std::cout << GetCellId() << ": NrGnbPhy: Current optimal sector and elevation are same as those reported by REM" << std::endl;
-    // FIXME: sure that m_currBeamformingVector should not be adjusted anyways?
+    NS_LOG_DEBUG(GetCellId() << ": NrGnbPhy: Current optimal sector and elevation are same as those reported by REM" << std::endl);
     return;
   }
 
-  // FIXME: only change the bfv for specific UE if it differs to the currently saved one
-  // Otherwise we get a spam in tracing event, because we change beams every 250ms.
   NS_ASSERT_MSG(m_ueAttachedImsiMap.find(linkData.imsi) != m_ueAttachedImsiMap.end(), " imsi from link data not found in m_ueAttachedImsiMap");
   complexVector_t currentBfvForUe = m_beamManager->GetBeamformingVector(m_ueAttachedImsiMap.at (linkData.imsi));
 
@@ -2949,21 +2813,15 @@ void NrGnbPhy::DoSetREMBeam(LteRrcSap::LinkData linkData)
       CreateDirectionalBfv(m_beamManager->GetAntennaArray(),
                           remSector,
                           remElevation, true),
-        // m_imsiOptimalBeamId.at(linkData.imsi)); // wrong, we set the sector and elev of currentl used beam ID, not the REM one
       BeamId(remSector, remElevation));
 
-  std::cout << "NrGnbPhy: is current bfv for UE same as the one sent by REM? " << std::endl;
-  std::cout << "  - are bfv same? " << (bool)(remBfv.first == currentBfvForUe) << std::endl;
   if (remBfv.first == currentBfvForUe)
     return; // we do not need to change anything for beam pointed to the current UE
 
-  // FIXME: this might bite me when I run multiuser sim. current user is not necessarily the one that we received
-  // the command for?
   m_currBeamformingVector = remBfv;
   
   m_beamManager->SaveBeamformingVector(m_currBeamformingVector, m_ueAttachedImsiMap.find(linkData.imsi)->second);
-  m_beamManager->ChangeBeamformingVector (m_ueAttachedImsiMap.at (linkData.imsi));
-  std::cout << GetCellId() << ": NrGnbPhy::DoSetREMBeam: beam manager saved and changed beam to " << m_currBeamformingVector.second << std::endl;
+  NS_LOG_DEBUG(GetCellId() << ": NrGnbPhy::DoSetREMBeam: beam manager saved and changed beam to " << m_currBeamformingVector.second << std::endl);
 
   BeamSweepTraceParams params;
   params.imsi = linkData.imsi;
@@ -2971,30 +2829,7 @@ void NrGnbPhy::DoSetREMBeam(LteRrcSap::LinkData linkData)
   params.foundCell = GetCellId();
   params.foundSector = remSector;
   params.foundElevation = remElevation;
-
   m_beamSweepTrace(params);
-
-  std::cout << "NrGnbPhy::DoSetREMBeam: tracing parameters created and passed to m_beamSweepTrace" << std::endl;
-}
-
-// delete this?
-std::pair<uint16_t, double> NrGnbPhy::DoGetCurrentGnbBeamIdOfImsi(uint64_t imsi)
-{
-  std::pair<uint16_t, double> beamId;
-  if (m_beamManager->GetCurrentBeamformingVector ().size() != 0)
-  {
-    //complexVector_t is the result of the call
-    // This gets the current antenna config
-    complexVector_t tmp = m_beamManager->GetCurrentBeamformingVector(); // wrong. this returns 63 complext numbers that represent all antenna elements and their weigths
-    // How do I knwow which user is being served now?
-    // Users are served in TDD manner.
-    std::cout << "NrGnbPhy::DoGetCurrentGnbBeamIdOfImsi: complexVector_t size " << tmp.size() << std::endl;
-    std::cout << "NrGnbPhy::DoGetCurrentGnbBeamIdOfImsi: current beamforming vector: " << tmp.front().real() << " + i*" << tmp.front().imag() << std::endl;
-  }
-  else
-  {
-      std::cout << "NrGnbPhy::DoGetCurrentGnbBeamIdOfImsi: beam manager is empty. Can not get current beamforming vector" << std::endl;
-  }
 }
 
 }

@@ -451,6 +451,12 @@ public:
    */
   void SetUlCtrlSyms (uint8_t v);
 
+  /**
+   * \brief Defines whether scheduler should ignore SSBs
+   */
+  void SetREMLABFlag(bool value);
+  bool GetREMLABFlag() const;
+
   //****************************************************************************************************
   //Needed for applying IA delay
   void IAdelay(Time delay);
@@ -836,6 +842,9 @@ private:
   std::unique_ptr <NrMacSchedulerHarqRr> m_schedHarq; //!< Pointer to the real HARQ scheduler
 
   friend NrSchedGeneralTestCase;
+
+  // Enables REM-based Location-Aided Beam Management
+  bool m_useREMLAB{false};
 };
 
 } //namespace ns3

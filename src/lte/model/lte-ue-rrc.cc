@@ -433,8 +433,6 @@ void
 LteUeRrc::SetLteUeRrcSapUser (LteUeRrcSapUser * s)
 {
   NS_LOG_FUNCTION (this << s);
-  std::cout << "LteUeRrc::SetLteUeRrcSapUser: RRC SAP User was set for user " << (unsigned)GetImsi() << std::endl;
-  std::cout << " m_rrcSapUser is assigned " << s << std::endl;
   m_rrcSapUser = s;
 }
 
@@ -938,6 +936,7 @@ void
 LteUeRrc::DoRecvSystemInformationBlockType1 (uint16_t cellId,
                                              LteRrcSap::SystemInformationBlockType1 msg)
 {
+  // This is received periodically every 10 ms from the serving gNB after the connection is established
   NS_LOG_FUNCTION (this);
   switch (m_state)
     {
@@ -3263,6 +3262,9 @@ void
 LteUeRrc::SwitchToState (State newState)
 {
   NS_LOG_FUNCTION (this << ToString (newState));
+  std::cout << "LteUeRrc::SwitchToState: from " << m_state << " to " << newState << std::endl;
+  std::cout << " IMSI " << m_imsi << " RNTI " << m_rnti << " UeRrc "
+                    << ToString (m_state) << " --> " << ToString (newState);
   State oldState = m_state;
   m_state = newState;
   NS_LOG_INFO (this << " IMSI " << m_imsi << " RNTI " << m_rnti << " UeRrc "
@@ -3568,7 +3570,9 @@ LteUeRrc::DoNotifyOutOfSyncNr ()
     m_radioLinkFailureDetected = Simulator::Schedule (m_nrt310, &LteUeRrc::RadioLinkFailureDetected, this);
   }
   
-  //m_cphySapProvider.at(0)->StartBeamSweep (NrPhy::BeamSweepType::IASweep);
+  // Was this here before to do beam sweeps when explicitly requested?
+  // Yes, this 
+  m_cphySapProvider.at(0)->StartBeamSweep (NrPhy::BeamSweepType::IASweep);
 }
 
 void
@@ -3775,12 +3779,11 @@ LteUeRrc::SendPositionReport(Vector3D position)
 {
   // Do not send position report until the timer expires.
   if (!m_positionTimerExpired)
+  {
     return;
+  }
 
   m_positionTimerExpired = false;
-
-  // call the method in SapUser
-  // Sap User is for txing data to eNB
 
   LteRrcSap::PositionReport report;
   report.imsi = GetImsi();
@@ -3789,9 +3792,9 @@ LteUeRrc::SendPositionReport(Vector3D position)
   report.uePosition.y = position.y;
   report.uePosition.z = position.z;
 
-  // This seems to send the report to gNB instead of CO
-  // It goes to nrRrcProtocolIdeal, as this is the default RRC protocol created by NrHelper when the UEs and gNBs are installed.
-  m_rrcSapUser->SendPositionReport(report); // expects a PositionReport
+
+  // Forward the report to the RRC protocol via SapUser.
+  m_rrcSapUser->SendPositionReport(report);
   std::cout << "   SendingPosition to eNB RRC from m_rrcSapUser " << &m_rrcSapUser <<  std::endl;
   std::cout << "   - imsi: " << static_cast<int>(report.imsi) << std::endl;
   std::cout << "   - Current Cell Id: " << static_cast<int>(report.cellId) << std::endl;
@@ -3799,23 +3802,23 @@ LteUeRrc::SendPositionReport(Vector3D position)
   Simulator::Schedule(Seconds(m_positionReportPeriodSeconds), &LteUeRrc::PositionReportTimer, this);
 }
 
-// labf
+// REMLAB
 void
 LteUeRrc::PositionReportTimer()
 {
   m_positionTimerExpired = true;
 }
 
-//labf: test
+// REMLAB
 void
 LteUeRrc::DoSwitchToIdleRA()
 {
-  std::cout << "LteUeRrc::DoSwitchToIdleRA: current state is " << GetState () << std::endl;
+  NS_LOG_DEBUG("LteUeRrc::DoSwitchToIdleRA: current state is " << GetState ());
   // similar to DoSendOptimalBeamMapToLteCoordinator
   if (GetState () == IDLE_START) // THIS WILL ONLY HAPPEN AT THE BEGINNING, OR WHEN AN OUTAGE W/O HANDOVER TAKES PLACE  
   {
     SwitchToState (IDLE_RANDOM_ACCESS);
-    std::cout << "LteUeRrc::DoSwitchToIdleRA: actually switched" << std::endl;
+    NS_LOG_DEBUG("LteUeRrc::DoSwitchToIdleRA: switched to IDLE_RANDOM_ACCESS");
   }
 }
 

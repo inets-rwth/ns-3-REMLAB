@@ -508,7 +508,7 @@ private:
 
   void ProcessCSIRSs (Ptr<NrCSIRSMessage> msg);
 
-  // labf
+  /// REMLAB: Change the beamforming vector to the one that is commanded by the LTE CO
   void DoSetRemBeam(LteRrcSap::LinkData linkData);
   
   /**
@@ -708,8 +708,7 @@ private:
 
   void CheckIfSweepIsComplete ();
 
-  //labf: test
-  // Simplified version of CheckIfSweepIsCompleted that is used with LABF to initialize RLM-realted members
+  // REMLAB: Simplified version of CheckIfSweepIsCompleted that is used with REMLAB to initialize RLM-realted members
   void RlmInitAfterRemIA ();
   
   std::map<uint8_t, std::vector<std::pair<std::pair<SfnSf, uint16_t>, std::pair<double, BeamId>>>> RetrieveCellOptimalMap ();
@@ -921,13 +920,13 @@ private:
   std::map<SfnSfKey, std::pair<std::pair<BeamId, uint8_t>, std::pair<BeamId,double>>> m_recvCSIMap;
   std::vector<std::pair<std::pair<SfnSfKey, uint8_t>, std::pair<BeamId, double>>> m_subOptimalCSIBeamMap;
 
-  // labf
+  // REMLAB
   // keeps the mapping between range of degrees to sectors
   std::map<std::pair<double, double>, uint16_t> m_sectorDegreeMap;
   std::map<std::pair<double, double>, double> m_elevationDegreeMap;
   
-public: // FIXME: use proper setter/getter
-  bool m_useLABF{false};
+public:
+  bool m_useREMLAB{false};
   uint64_t m_amountOfGnbs{0};
 };
 

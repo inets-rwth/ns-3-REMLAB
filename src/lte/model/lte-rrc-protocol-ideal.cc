@@ -772,8 +772,7 @@ LteEnbRrcProtocolIdeal::DoSendUeDeRegistrationCompletedUpdate (uint16_t rnti, ui
 void
 LteEnbRrcProtocolIdeal::DoSendRemBeamFromLTECoordinator(uint16_t rnti, LteRrcSap::LinkData linkData)
 {
-  // Not implemented for Ideal version of RRC proto
-    std::cout << "  ** LteEnbRrcProtocolIdeal::DoSendRemBeamFromLTECoordinator. does nothing" << std::endl;
+  // Not implemented for Ideal version of RRC protocol
 
 }
 

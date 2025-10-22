@@ -109,6 +109,7 @@ LteUeRrcProtocolReal::DoSendRrcConnectionRequest (LteRrcSap::RrcConnectionReques
   // initialize the RNTI and get the EnbLteRrcSapProvider for the
   // eNB we are currently attached to
   m_rnti = m_rrc->GetRnti ();
+  std::cout << "LteUeRrcProtocolReal::DoSendRrcConnectionRequest: RNTI is " << static_cast<int>(m_rnti) << std::endl;
   SetEnbRrcSapProvider ();
 
   Ptr<Packet> packet = Create<Packet> ();
@@ -200,6 +201,11 @@ LteUeRrcProtocolReal::DoSendPositionReport (LteRrcSap::PositionReport msg)
     std::cout << "LteUeRrcProtocolReal::DoSendPositionReport: scheduling a tx of position data to eNB" << std::endl;
    
     m_rnti = m_rrc->GetRnti ();
+    if (m_rnti == 0)
+    {
+      std::cout << "LteUeRrcProtocolReal::DoSendPositionReport: RNTI is 0! aborting the position report trasnmission" << std::endl;
+      return;
+    }
     SetEnbRrcSapProvider ();
 
     Ptr<Packet> packet = Create<Packet> ();
@@ -309,6 +315,59 @@ LteUeRrcProtocolReal::SetLteEnbRrcSapProvider ()
 {
   //DOES NOTHING FOR LteUeRrcProtocolReal, SHOULD NOT BE CONFUSED WITH LteGnbRrcProtocolReal
   std::cout << "LteUeRrcProtocolReal::SetLteEnbRrcSapProvider: called, but does nothing" << std::endl;
+    NS_LOG_FUNCTION (this);
+
+  uint8_t lteCellId = 11; // test. was 11
+  // uint8_t lteCellId = 28; // For Wireless InSite REM
+  NS_LOG_DEBUG ("RNTI " << m_rnti << " connected to cell " << lteCellId);
+  std::cout << "LteUeRrcProtocolReal::SetLteEnbRrcSapProvider: RNTI " << static_cast<int>(m_rnti) << " connected to coordinator cell " << static_cast<int>(lteCellId) << std::endl;;
+
+  // walk list of all nodes to get the peer eNB
+  // my: they are searching for cell ID 11 here?
+  Ptr<LteEnbNetDevice> enbDev;
+  NodeList::Iterator listEnd = NodeList::End ();
+  bool found = false;
+  for (NodeList::Iterator i = NodeList::Begin (); 
+       (i != listEnd) && (!found); 
+       ++i)
+    {
+      Ptr<Node> node = *i;
+      int nDevs = node->GetNDevices ();
+      for (int j = 0; 
+           (j < nDevs) && (!found);
+           j++)
+        {
+          enbDev = node->GetDevice (j)->GetObject <LteEnbNetDevice> ();
+          if (enbDev == 0)
+            {
+              continue;
+            }
+          else
+            {
+              if (enbDev->HasCellId (lteCellId))
+                {
+                  found = true;          
+                  break;
+                }
+            }
+        }
+    }
+  NS_ASSERT_MSG (found, " Unable to find eNB with CellId =" << lteCellId);
+  // m_lteEnbRrcSapProvider should be the Rrc SAP Provider of the lteCellId 11
+  std::cout << "   LteUeRrcProtocolReal::SetLteEnbRrcSapProvider: enbDev that was found has cell id " << enbDev->GetCellId() << std::endl;
+  m_enbRrcSapProvider = enbDev->GetRrc ()->GetLteEnbRrcSapProvider ();  
+  // m_lteEnbRrcSapProvider is the coordinator. It has the correct cell ID
+  std::cout << "   LteUeRrcProtocolReal::m_enbRrcSapProvider addr is " << &m_enbRrcSapProvider << std::endl;
+
+  // TODO:: ESTABLISH THE REVERSE CONNECTION:i.e., FROM LTE ENB TO UE
+  // my: that would be the reverse LTE connection from gNB to UE, not the CO->UE 
+  Ptr<LteEnbRrcProtocolReal> enbRrcProtocolReal = enbDev->GetRrc ()->GetObject<LteEnbRrcProtocolReal> ();
+
+  //enbRrcProtocolReal->SetUeRrcSapProvider (lteRnti, m_ueRrcSapProvider);
+  //originally SetUeRrcSapProvider gets an RNTI but as mobiles can have the same RNTI, use IMSI here
+  //std::map<uint64_t, uint16_t> 
+  uint16_t rnti = enbDev->GetRrc()->GetLteRnti(m_rrc->GetImsi());
+  enbRrcProtocolReal->SetUeRrcSapProvider (rnti, m_ueRrcSapProvider);
 }
 
 void 
@@ -328,9 +387,11 @@ LteUeRrcProtocolReal::SetEnbRrcSapProvider ()
 {
   NS_LOG_FUNCTION (this);
 
-  uint16_t cellId = m_rrc->GetCellId ();
+  // uint16_t cellId = m_rrc->GetCellId ();
+  uint16_t cellId = 11; // LTE CO
 
   NS_LOG_DEBUG ("RNTI " << m_rnti << " connected to cell " << cellId);
+  std::cout << "LteUeRrcProtocolReal::SetEnbRrcSapProvider : RNTI " << m_rnti << " connected to cell " << cellId << std::endl;
 
   // walk list of all nodes to get the peer eNB
   Ptr<LteEnbNetDevice> enbDev;
@@ -363,8 +424,10 @@ LteUeRrcProtocolReal::SetEnbRrcSapProvider ()
     }
   NS_ASSERT_MSG (found, " Unable to find eNB with CellId =" << cellId);
   m_enbRrcSapProvider = enbDev->GetRrc ()->GetLteEnbRrcSapProvider ();
+  std::cout << "LteUeRrcProtocolReal::SetEnbRrcSapProvider:  m_enbRrcSapProvider is " << &m_enbRrcSapProvider << std::endl;
   Ptr<LteEnbRrcProtocolReal> enbRrcProtocolReal = enbDev->GetRrc ()->GetObject<LteEnbRrcProtocolReal> ();
   enbRrcProtocolReal->SetUeRrcSapProvider (m_rnti, m_ueRrcSapProvider);
+  std::cout << "LteUeRrcProtocolReal::SetEnbRrcSapProvider: setup completed " << std::endl;
 }
 
 void
@@ -871,16 +934,10 @@ LteEnbRrcProtocolReal::DoSendBeamSweepCommandFromLTECoordinator (uint16_t rnti)
                        GetUeRrcSapProvider (rnti));
 }
 
-// labf
+// REMLAB
 void
 LteEnbRrcProtocolReal::DoSendRemBeamFromLTECoordinator(uint16_t rnti, LteRrcSap::LinkData linkData)
 {
-    std::cout << "  ** LteEnbRrcProtocolReal::DoSendRemBeamFromLTECoordinator. scheduling LteUeRrcSapProvider::RecvRemBeamFromLTECoordinator" << std::endl;
-
-  // TODO: add a proper message passing instead of direct call?
-  // This failed for walk940 at time 9.5 as rnti was set to 2. GetUeRrcSapProvider failed its assert
-  // x Fixed by using m_lteRnti instead of m_imsiRntiMap on LteEnbRrc side to fetch the RNTI.
-  //   m_lteRnti is for LTE CO connections, m_imsiRntiMap for gNB connections
   Simulator::Schedule (RRC_REAL_MSG_DELAY,
                        &LteUeRrcSapProvider::RecvRemBeamFromLTECoordinator,
                        GetUeRrcSapProvider (rnti),

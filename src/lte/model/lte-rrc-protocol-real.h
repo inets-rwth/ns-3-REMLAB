@@ -382,7 +382,7 @@ private:
 
   void DoSendUeDeRegistrationCompletedUpdate (uint16_t rnti, uint64_t imsi);
 
-  // labf
+  // REMLAB
   void DoSendRemBeamFromLTECoordinator(uint16_t rnti, LteRrcSap::LinkData linkData);
 
   uint16_t m_rnti; ///< the RNTI

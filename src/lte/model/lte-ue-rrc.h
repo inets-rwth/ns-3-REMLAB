@@ -1419,6 +1419,7 @@ private:
 
   bool m_positionTimerExpired{true};
 
+  /// REMLAB: timer for tracking the period in seconds for PositionReports from a single UE.
   void PositionReportTimer();
 
 public:
@@ -1426,9 +1427,9 @@ public:
    * The number of component carriers.
    */
   uint16_t m_numberOfComponentCarriers;
-  // labf
+  /// REMLAB: period in seconds for PositionReports from a single UE.
   double m_positionReportPeriodSeconds{1.};
-  //test
+  /// REMLAB
   void DoSwitchToIdleRA();
 
 }; // end of class LteUeRrc

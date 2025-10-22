@@ -753,9 +753,9 @@ private:
 
   void SetCSIRSTimer (bool csiRSTimer);
 
-  //test
+  /// REMLAB: Dummy method to satisfy the template concept for lte-enb-cphy-sap
   void DoForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg);
-  std::pair<uint16_t, double> DoGetCurrentGnbBeamIdOfImsi(uint64_t imsi);
+  /// REMLAB: Change the beamforming vector according to what the LTE CO considers to be the best for the current UE
   void DoSetREMBeam(LteRrcSap::LinkData linkData);
 
 private:
@@ -874,16 +874,16 @@ private:
 
   BeamformingVector m_currBeamformingVector;
 
-  //test
+  // ======
+  // REMLAB
+  // ======
   uint16_t prevSector = 1;
-
-  // labf
   // keeps the mapping between range of degrees to sectors
   std::map<std::pair<double, double>, uint16_t> m_sectorDegreeMap;
   std::map<std::pair<double, double>, double> m_elevationDegreeMap;
 
 public: // FIXME: use proper setter/getter
-  bool m_useLABF{false};
+  bool m_useREMLAB{false};
 };
 
 }

@@ -133,9 +133,8 @@ public:
 
   virtual void UpdateSuboptimalCSIRSBeams (uint64_t imsi, uint16_t sector, double elevation) = 0;
 
-  //test
+  // REMLAB
   virtual void ForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg) = 0;
-  virtual std::pair<uint16_t, double> GetCurrentGnbBeamIdOfImsi(uint64_t imsi) = 0;
   virtual void SetREMBeam(LteRrcSap::LinkData params) = 0;
 };
 
@@ -214,11 +213,8 @@ public:
   virtual void UpdateBeamsTBRLM (uint64_t imsi, std::vector<uint16_t> optimalBeamIndexVector, SfnSf startingSfn, std::vector<uint8_t> csiCounterVector);
   virtual void UpdateSuboptimalCSIRSBeams (uint64_t imsi, uint16_t sector, double elevation);
 
-  //test
-  // delete this or reuse for something else
+  // REMLAB
   virtual void ForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg);
-  //BeamId (uint16_t sector, double elevation);
-  virtual std::pair<uint16_t, double> GetCurrentGnbBeamIdOfImsi(uint64_t imsi); // delete this
   virtual void SetREMBeam(LteRrcSap::LinkData params);
   
 private:
@@ -364,19 +360,12 @@ MemberLteEnbCphySapProvider<C>::UpdateSuboptimalCSIRSBeams (uint64_t imsi, uint1
   m_owner->DoUpdateSuboptimalCSIRSBeams (imsi, sector, elevation);
 }
 
-//test
+// REMLAB
 template <class C>
 void
 MemberLteEnbCphySapProvider<C>::ForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg)
 {
   m_owner->DoForwardUePositionReportToREM(rnti, msg);
-}
-
-template <class C>
-std::pair<uint16_t, double>
-MemberLteEnbCphySapProvider<C>::GetCurrentGnbBeamIdOfImsi(uint64_t imsi)
-{
-  return m_owner->DoGetCurrentGnbBeamIdOfImsi(imsi);
 }
 
 template <class C>

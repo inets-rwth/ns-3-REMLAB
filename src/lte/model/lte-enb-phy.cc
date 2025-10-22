@@ -1210,18 +1210,11 @@ LteEnbPhy::DoUpdateSuboptimalCSIRSBeams (uint64_t imsi, uint16_t sector, double 
   // DOES NOTHING FOR LTEENBPHY
 }
 
-//test
+// REMLAB
 void
 LteEnbPhy::DoForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg)
 {
  // Does nothing, because the NrGnbPhy has the desired overload.
-}
-
-std::pair<uint16_t, double>
-LteEnbPhy::DoGetCurrentGnbBeamIdOfImsi(uint64_t imsi)
-{
-  // Does nothing, because the NrGnbPhy has the desired overload.
-  std::cout << "Ended up in LteEnbPhy::DoGetCurrentGnbBeamIdOfImsi. Will do nothing" << std::endl;
 }
 
 void

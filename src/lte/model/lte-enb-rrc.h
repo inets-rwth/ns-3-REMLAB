@@ -58,7 +58,7 @@
 #include <ns3/nr-ue-net-device.h>
 #include <ns3/nr-phy-mac-common.h>
 
-// labf: error model for position reports
+// remlab: error model for position reports
 #include <ns3/ornstein-uhlenbeck-process.h>
 // temporary solution for SINR estimation for candidate REM entries
 #include <ns3/rem-sinr-estimator.h>
@@ -1090,7 +1090,7 @@ public:
 
    uint64_t DoGetImsiFromRnti (uint16_t rnti);
 
-  // labf:
+  // remlab:
   /// Stores the gNB positions in m_gNBpositions for FindNonEmptyRemEntry()
   /// Optionally accepts a list of indended gNB IDs if they need to be defined in a custom way.
   void StoreGnbPositions(boost::optional<std::vector<uint16_t>> gnbCellIds = boost::none);
@@ -1140,7 +1140,7 @@ public:
     (const uint64_t imsi, const uint16_t cellId, const uint16_t rnti,
      const LteRrcSap::MeasurementReport report);
 
-  // labf: test tracing of position reports from an UE
+  // remlab: test tracing of position reports from an UE
   typedef void (*ReceivePositionReportTracedCallback)
     (const uint64_t imsi, const uint16_t cellId, const uint16_t rnti,
      const LteRrcSap::PositionReport report);
@@ -1157,7 +1157,7 @@ public:
       (const uint64_t imsi, const uint16_t rnti, const uint16_t cellId,
        const std::string cause);
 
-  // labf: 
+  // remlab: 
   typedef void (*LocationErrorTracedCallback)
       (const uint64_t imsi, const uint16_t cellId, const uint16_t rnti,
       const UePositionReportError positionReportError);
@@ -1206,31 +1206,29 @@ public:
   bool m_rlmOn;
   bool m_loadBalancing;
 
-    //test. Pass the position report from a specific UE to underlying NrGnbPhy, which
+  // REMLAB: Pass the position report from a specific UE to underlying NrGnbPhy, which
   // will qeury REM, select best beams for the reported position, check if the gNB uses
   // the best beam according to REM, then toggle command to UE for checking if it is
   // also using a correct beam. 
   void ForwardUePositionReportToREM(LteRrcSap::PositionReport msg);
-    //test: set REM for all eNBs
   // Needs to be public to pass a file from main.cpp
-  void LoadRem(std::string input_files_folder); // TODO: labf: rename this
-  void MakeEnbACoordinator(); // Delete this
+  void LoadRem(std::string input_files_folder);
 
-  /// Whether we use Location-aided Beamforming or not
-  bool m_useLABF{false};
+  /// Whether we use Location-aided Beam Management or not
+  bool m_useREMLAB{false};
   // Defines whether we immediately handover to the best cell according to REM if UE is not served by it.
   // When set to "false", the algorithm allows UE to be served by a suboptimal cell if the SINR is 
   // high enough. Handover is done only if the UE is below max rate threshold for more than 
   // m_handoverHysterisisMaxCounter positions in a row.
-  bool m_immediateLabfHandovers{false};
-  // IMSI might remain in suboptimal serving cell for max 1 position. REM commands a handover after that. 
+  bool m_immediateREMLABHandovers{false};
+  /// IMSI might remain in suboptimal serving cell for max 1 position. LTE CO commands a handover after that. 
   uint8_t m_handoverHysterisisMaxCounter{1};
-  // Defines whether we apply an error model to UE position reports
+  /// Defines whether we apply an error model to UE position reports
   bool m_useErroneousUePosition{true};
   /// Use REM with error model applied to its position entries.
   bool m_useErroneousREM{false};
 
-  // labf: GNSS Error models for UE position reports
+  // REMLAB: GNSS Error models for UE position reports
   std::map<uint64_t, Ptr<OrnsteinUhlenbeckErrorModel>> m_latitudeErrorModels;
   std::map<uint64_t, Ptr<OrnsteinUhlenbeckErrorModel>> m_longitudeErrorModels;
   
@@ -1288,7 +1286,7 @@ private:
    */
   void DoRecvMeasurementReport (uint16_t rnti, LteRrcSap::MeasurementReport msg);
 
-  // labf: function that recieves PositionReport from an UE over direct LTE link to CO 
+  // REMLAB: function that recieves PositionReport from an UE over direct LTE link to CO 
   void DoRecvPositionReport (uint16_t rnti, LteRrcSap::PositionReport msg);
 
   /**
@@ -1334,10 +1332,10 @@ private:
 
   void DoRecvSetCSIRSFlag (LteRrcSap::SetCSIRSFlagRRC params);
 
-  // labf: function that recieves PositionReport from an UE over X2 from LTE CO
+  // REMLAB: function that recieves PositionReport from an UE over X2 from LTE CO
   // TODO: delete, as this is not used anymore
   void DoRecvUePositionReport(LteRrcSap::PositionReport params);
-  // labf: fucntion that receives BPL command on a gNB from LTE CO
+  // REMLAB: fucntion that receives BPL command on a gNB from LTE CO
   void DoRecvREMLinkDataToGnb(LteRrcSap::LinkData params);
 
   // S1 SAP methods
@@ -1982,7 +1980,7 @@ private:
 
   std::map<uint8_t, std::pair<uint8_t, bool>> m_numOfUesPerGnb;
 
-  /// Vector of gNB positions. For the LABF recovery algorithm.
+  /// Vector of gNB positions. For the REMLAB recovery algorithm.
   std::map<uint16_t, Vector> m_gNBpositions;
   std::map<uint64_t, uint8_t> m_imsiHandoverHysterisisCounter;
 
@@ -1997,18 +1995,18 @@ private:
   TracedCallback <BeamSweepTraceParams> m_beamSweepInitiateFromCoordinatorTrace;
 	TracedCallback <RadioLinkMonitoringTraceParams> m_radioLinkMonitoringTrace;
 
-  // labf: load the inventory file as REM
+  // REMLAB: load the inventory file as REM
   void LoadInventory (std::string inventory_file);
   void LoadRemFromInventory (std::string inventory_file, std::map<Vector, Ptr<LinkData>>& rem);
   bool m_loadMeasurementRem{false};
   void WriteRemToFile(const std::string& filename, const std::map<Vector, Ptr<LinkData>>& linkData);
-  // labf: Radio Environment Map that is known to the CO
+  // REMLAB: Radio Environment Map that is known to the CO
   std::map<Vector, Ptr<LinkData>> m_allLinkData;
-  // labf: ideal REM that is not affected by measurement errors. For tracing and debugging purposes only. 
+  // REMLAB: ideal REM that is not affected by measurement errors. For tracing and debugging purposes only. 
   std::map<Vector, Ptr<LinkData>> m_idealLinkData;
-  bool m_isCoordinator{false}; // FIXME: try to avoid requiring this var.
   /// Defines whether Bresenham's line algorithm is used if no REM entry found for the queried position
   bool m_enableRemRecoveryAlgorithm{false};
+  /// For the given vector of values, eturn the index with the lowest Path Loss value
   size_t FindLowestPlIndex(doubleVector_t pathLossData);
   /// If the UE is inside of an obstacle, this method tries to identify the closest non-empty REM entry that
   /// lies on the straight line between the UE and its serving BS.
@@ -2019,7 +2017,7 @@ private:
   /// Search for the best REM entries for the specific cell and return their index. 
   size_t FindIndexForCurrentServingCell(Ptr<LinkData> linkData, uint16_t servingCell);
 
-  // labf. For tracing purposes only
+  // REMLAB. For tracing purposes only
   int m_gnbLocationOffsetX{0};
   int m_gnbLocationOffsetY{0};
 

@@ -8,13 +8,21 @@
 using namespace ns3;
 using namespace std;
 
-Ptr<OrnsteinUhlenbeckErrorModel> latitudeErrorModel
-    = CreateObject<OrnsteinUhlenbeckErrorModel>(6.2, 1.5, 3.8);
-Ptr<OrnsteinUhlenbeckErrorModel> longitudeErrorModel
-    = CreateObject<OrnsteinUhlenbeckErrorModel>(3.9, 2.4, 4.2);
+// Medium urbanization error
+// Ptr<OrnsteinUhlenbeckErrorModel> latitudeErrorModel
+//     = CreateObject<OrnsteinUhlenbeckErrorModel>(6.2, 1.5, 3.8);
+// Ptr<OrnsteinUhlenbeckErrorModel> longitudeErrorModel
+//     = CreateObject<OrnsteinUhlenbeckErrorModel>(3.9, 2.4, 4.2);
 
-// Function to read a CSV file and apply an offset to x values
-void ReadCsvAndApplyOffset(std::string filename, double offsetX) {
+// High urbanization error
+Ptr<OrnsteinUhlenbeckErrorModel> latitudeErrorModel
+= CreateObject<OrnsteinUhlenbeckErrorModel>(6, 8.1, 8.6);
+Ptr<OrnsteinUhlenbeckErrorModel> longitudeErrorModel
+= CreateObject<OrnsteinUhlenbeckErrorModel>(4, -1.7, 4);
+
+// Function to read a CSV file and apply an offset to x-,y-,z- values
+void ReadCsvAndApplyOffset(std::string filename)
+{
     std::ifstream file(filename);
     std::string line;
     std::vector<std::tuple<double, double, double>> positions;
@@ -22,7 +30,8 @@ void ReadCsvAndApplyOffset(std::string filename, double offsetX) {
     // Read and ignore the header line
     std::getline(file, line);
 
-    while (std::getline(file, line)) {
+    while (std::getline(file, line))
+    {
         std::stringstream ss(line);
         std::string xStr, yStr, zStr;
         double x, y, z;
@@ -40,7 +49,9 @@ void ReadCsvAndApplyOffset(std::string filename, double offsetX) {
             // Apply the offset to x value
             double xErr = latitudeErrorModel->GetNextValue();
             double yErr = longitudeErrorModel->GetNextValue();
-            std::cout << xErr << "," << yErr << std::endl;
+            std::cout << "Vector{"
+                      << xErr << ","
+                      << yErr << ",0.},"<< std::endl;
             x += xErr;
             y += yErr;
 
@@ -60,14 +71,14 @@ void ReadCsvAndApplyOffset(std::string filename, double offsetX) {
     }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     CommandLine cmd;
     cmd.Parse(argc, argv);
 
     std::string input_raytracing_folder = "src/nr/model/Raytracing_UE_set/2000_cords.txt";
-    double offsetX = 10.0; // Fixed offset value for x
 
-    ReadCsvAndApplyOffset(input_raytracing_folder, offsetX);
+    ReadCsvAndApplyOffset(input_raytracing_folder);
 
     return 0;
 }

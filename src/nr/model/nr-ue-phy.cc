@@ -76,45 +76,16 @@ NrUePhy::NrUePhy ()
   }  
   m_cellIdCounter = 1;
 
-  // labf
+  // ================================================================
+  // REMLAB: Mapping of azimuth and elevation angles to antenna sectors
+  // ================================================================
+
   m_elevationDegreeMap[{0, 14.9999}] = 90;
   m_elevationDegreeMap[{15, 44.9999}] = 60;
   m_elevationDegreeMap[{45, 90}] = 30;
 
-  // m_ueSectorNumber is 33. 3 elevations x 11 sectors
-  // m_ueHorizontalAngleStep is 40 by default.
-  //  in our setup it is 18 as delivered by GetUeHorizontalAngleStep()
-  /** iNETs antenna config
-    gNBVerticalBeamStep = 30.0;
-    ueVerticalBeamStep = 30.0;
-    gNBHorizontalBeamStep = 9.0;
-    ueHorizontalBeamStep = 18.0;
-  **/
- // FIXME: fix intervals so that upper value is not included?
-  // m_sectorDegreeMap[{0, 18}] = 5;
-  // m_sectorDegreeMap[{18, 36}] = 6;
-  // m_sectorDegreeMap[{36, 54}] = 7;
-  // m_sectorDegreeMap[{54, 72}] = 8;
-  // m_sectorDegreeMap[{72, 90}] = 9;
-  // m_sectorDegreeMap[{90, 108}] = 10;
-  // m_sectorDegreeMap[{108, 126}] = 9;
-  // m_sectorDegreeMap[{126, 144}] = 8;
-  // m_sectorDegreeMap[{144, 162}] = 7;
-  // m_sectorDegreeMap[{162, 180}] = 6;
-  // m_sectorDegreeMap[{180, 198}] = 5;
-  // m_sectorDegreeMap[{198, 216}] = 3;
-  // m_sectorDegreeMap[{216, 234}] = 3;
-  // m_sectorDegreeMap[{234, 252}] = 2;
-  // m_sectorDegreeMap[{252, 270}] = 1;
-  // m_sectorDegreeMap[{270, 288}] = 0;
-  // m_sectorDegreeMap[{288, 306}] = 1;
-  // m_sectorDegreeMap[{306, 324}] = 2;
-  // m_sectorDegreeMap[{324, 342}] = 3;
-  // m_sectorDegreeMap[{342, 360}] = 4;
-
   m_sectorDegreeMap[{0, 9}] = 5;
   m_sectorDegreeMap[{351, 360}] = 5;
-
   m_sectorDegreeMap[{9, 27}] = 6;
   m_sectorDegreeMap[{27, 45}] = 7;
   m_sectorDegreeMap[{45, 63}] = 8;
@@ -313,10 +284,10 @@ NrUePhy::GetTypeId (void)
                    UintegerValue (21),
                    MakeUintegerAccessor (&NrUePhy::m_gnbHorizSectorNumber),
                    MakeUintegerChecker<uint16_t> ())
-    // Location-aided Beamforming
-    .AddAttribute ("UseLocationAidedBeamforming", "Use REM-based cell and beam selection for UEs and gNBs",
+    // Location-aided Beam Management
+    .AddAttribute ("UseREMLAB", "Use REM-based cell and beam selection for UEs and gNBs",
                    BooleanValue (false),
-                   MakeBooleanAccessor (&NrUePhy::m_useLABF),
+                   MakeBooleanAccessor (&NrUePhy::m_useREMLAB),
                    MakeBooleanChecker ())
     .AddAttribute ("AmountOfGnbs", "Amount of gNBs in the simulation.",
                    UintegerValue (0),
@@ -631,12 +602,13 @@ NrUePhy::PhyCtrlMessagesReceived (const Ptr<NrControlMessage> &msg)
       Ptr<NrRarMessage> rarMsg = DynamicCast<NrRarMessage> (msg);
       Simulator::Schedule ((GetSlotPeriod () * (GetL1L2CtrlLatency ()/2)), &NrUePhy::DoReceiveRar, this, rarMsg);
     }
-  else if (msg->GetMessageType () == NrControlMessage::PSS && m_realisticIA)
+  //  else if (msg->GetMessageType () == NrControlMessage::PSS && m_realisticIA)
+  else if (msg->GetMessageType () == NrControlMessage::PSS && m_realisticIA && !m_useREMLAB)
     {
       Ptr<NrPssMessage> pssMsg = DynamicCast<NrPssMessage> (msg);
       ProcessSSBs (pssMsg);
     }
-  // in labf we never receive CSI-RS
+  // in REMLAB we never receive CSI-RS
   else if (msg->GetMessageType () == NrControlMessage::CSI_RS && m_realisticIA && m_rlmOn)
     {
       Ptr<NrCSIRSMessage> csiRSMsg = DynamicCast<NrCSIRSMessage> (msg);
@@ -1377,6 +1349,8 @@ void
 NrUePhy::ReceivePss(uint16_t cellId, const Ptr<SpectrumValue>& p)
 {
     NS_LOG_FUNCTION(this);
+    if (cellId == 1)
+      std::cout << Simulator::Now().GetSeconds() << ": NrUePhy::ReceivePss: called" << std::endl;
 
     double sum = 0.0;
     uint16_t nRB = 0;
@@ -1433,7 +1407,7 @@ void
 NrUePhy::StartEventLoop (uint16_t frame, uint8_t subframe, uint16_t slot)
 {
   NS_LOG_FUNCTION (this);
-  if (m_realisticIA)
+  if (m_realisticIA && !m_useREMLAB)
   {
     Simulator::Schedule (GetSlotPeriod () - NanoSeconds (1.0),
                         &NrUePhy::AdjustAntennaForBeamSweep,
@@ -1523,12 +1497,10 @@ NrUePhy::DoSetImsi (uint64_t imsi)
   m_imsi = imsi;
 }
 
-// TODO: labf: prevent sweeping here
-// Request a Beam from REM instead of a sweep?
+
 void
 NrUePhy::UpdateSinrEstimate (uint16_t cellId, double sinr)
 {
-  // std::cout << "NrUePhy::UpdateSinrEstimate: cell ID " << cellId << " sinr " << sinr << std::endl;
   NS_LOG_FUNCTION (this);
   if (m_cellSinrMap.find (cellId) != m_cellSinrMap.end ()) 
   {
@@ -1546,13 +1518,10 @@ NrUePhy::UpdateSinrEstimate (uint16_t cellId, double sinr)
     m_lastPerceivedSinr = currentCellSinr;
 
     // If the SINR is below beam sweep threshold, we might command a sweep if not done already
-    // labf: this block should probably be replaced by a request to REM to get the best beam for currnetly known position
-    // or just comment out and wait for new beam update.
     if (currentCellSinr < m_beamSweepThreshold)
     {
-      if (m_useLABF)
-        return; // If we use labf, we wait for a beam from REM. Do not do a sweep.
-        // This will be rem_walk2000/run_3
+      if (m_useREMLAB)
+        return; // If we use REMLAB, we wait for a beam from REM. Do not do a sweep.
 
       m_consecutiveSinrBelowThreshold++;
       if (m_consecutiveSinrBelowThreshold > m_n310)
@@ -1575,7 +1544,6 @@ NrUePhy::UpdateSinrEstimate (uint16_t cellId, double sinr)
             }
             else
             {
-              std::cout << "NrUePhy: currentCellSinr " << currentCellSinr << ". m_beamSweepThreshold " << m_beamSweepThreshold << std::endl; 
               NS_LOG_UNCOND("IA already triggered, wont trigger until it is completed, IMSI:" << m_imsi);
             }
           }
@@ -1591,7 +1559,7 @@ NrUePhy::UpdateSinrEstimate (uint16_t cellId, double sinr)
   else if (currentCellId == 0) // We are not connected to any cell
   {
     // Prevent triggering a sweep. We wait for a beam report from REM.
-    if (m_useLABF)
+    if (m_useREMLAB)
       return;
 
     if (!m_IAalreadyTriggered)
@@ -1682,18 +1650,17 @@ NrUePhy::DoGenerateBeamVectorMap()
 void 
 NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
 {
-  // m_noOfTxSSBScanDirections is set to 63 and never changes
+  // With the current antenna configuration, m_noOfTxSSBScanDirections is set to 63 and never changes
   uint16_t cellId = pssMsg->GetCellId ();
   SfnSf currentSfn = GetCurrentSfnSf ();
   uint64_t imsi = m_netDevice->GetObject<NrUeNetDevice> ()->GetImsi ();
 
-  // m_IAperformed measns something like "To be performed" or "needs to be performed"??
-  // - it means it is ongoing
+  // m_IAperformed means "it is ongoing"
   // It is true in the beginning if we use realistic IA.
+
   // If initial access is ongoing and Pss message is not addressed to specific IMSI
-  // This block is repsonsible for sweeping and UE side.
-  // labf: need to comment this out at accept a BPL from LTE CO commanded by REM.
-  // actually, we want to also eliminate SSBs, so this funciton will not even be called
+  // This block is repsonsible for sweeping at UE side.
+  // REMLAB: we want to also eliminate SSBs, so this funciton will not even be called
   if (m_IAperformed && pssMsg->GetDestinationImsi () == 0)
   {
     // Check if we we already have an SSB processor registered for the cell that sent the SSB
@@ -1709,7 +1676,6 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
         Ptr<SSBProcessor> ssbProcessor = Create<SSBProcessor> ();
         ssbProcessor->m_cellId = cellId;
         // m_cellIDSSBMap holds cell ID as key and the ssbProcessor as value
-        std::cout << "NrUePhy::ProcessSSBs: inserting into m_cellIDSSBMap an entry for cell id : "<< (int)cellId << std::endl;
         m_cellIDSSBMap.insert(std::pair<uint8_t, Ptr<SSBProcessor>> (cellId, ssbProcessor));
         m_cellIDSSBMap.at (cellId)->SetStartingSfn (GetCurrentSfnSf ());
         m_cellIDSSBMap.at (cellId)->txSectorNumber++;
@@ -1736,24 +1702,18 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
             m_cellIDSSBMap.at(cellId)->InsertBeamIdSNRPair (m_cellIDSSBMap.at(cellId)->rxSectorNumber + 1,
               std::pair<uint16_t, double> (txSectorNumber, m_spectrumPhy->GetLastReceivedSNR(cellId)));
             
-            // m_gnbSectorNumber is 63. Actually why? This is set as attribute and means:
-            // "Total number of sections that gNB can sweep (known by UE)"
             // If we currently received and SSB from the last possible sector/beam
             if (txSectorNumber == m_gnbSectorNumber)
               {
                 // Start preparing the next receiving beam for UE
                 BeamId nextRxBeamId;
 
-                // m_txSSBCounterPerRx is always 63 at this point. So is m_gnbSectorNumber
                 // If we received from all possible TX sectors for the current amount of cells (was 10, now set to 1)
                 if (m_txSSBCounterPerRx >= m_amountOfGnbs * m_gnbSectorNumber)
                 {
                   // This is printed right in the beginning of the simulaiton
                   NS_LOG_UNCOND (Simulator::Now().GetSeconds() << " IMSI: " << imsi << " Sweep for RX Sector " << m_cellIDSSBMap.at(cellId)->rxSectorNumber + 1 << " is finished");
                   // If we did not reach the last possible RX sector
-                  std::cout << "  + rxSectorNumber is " << (unsigned)rxSectorNumber << std::endl;
-                  std::cout << "  + m_ueSectorNumber is " << m_ueSectorNumber << std::endl;
-
                   if (rxSectorNumber < m_ueSectorNumber - 1)
                   {
                     // m_beamTbSwept is probably the RX beam that will listen to all SSBs
@@ -1791,23 +1751,15 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
       }
     }
   }
-  // m_IAperformed is set to false if sweep was complete. So this will be re-entered when CheckIfSweepIsComplete()
-  // was called before.
   // If we are not doing IA now, but we want to use the flexRLM-specific SSB RLM
   else if (!m_IAperformed && m_ssbRlmOn) // This is exectued every 20ms after IA
   {
     // This is executed every 20ms after IA
-    //std::cout << Simulator::Now().GetSeconds() << ": NrUePhy::ProcessSSBs: !m_IAperformed && m_ssbRlmOn" << std::endl;
    if (m_ssbRLMProcessorMap.find(cellId) == m_ssbRLMProcessorMap.end())
    {
      // we did not find an according SSB RLM processor for the current cell id.
      if (IsFirstSSBInBurst(currentSfn, pssMsg->GetSymbolOffset()))
      {
-      // this block is entered for each gNB. 10 times  per each SSB sweep?
-      // TODO: does this happen every 20ms? (default SSB period)
-      //    AW: No, this is probably happening when UE is in range of next gNB?
-      std::cout << "At " << Simulator::Now().GetSeconds() << ":" << std::endl;
-      std::cout << "NrUePhy::ProcessSSBs: This is first SSB in burst. Adding a new SSBProcessor to map. cell id " << cellId << std::endl;
        // IF this is the first SSB in the burst, we create an SSB processor.
        Ptr<SSBProcessor> ssbProcessor = Create<SSBProcessor> ();
        ssbProcessor->m_cellId = cellId;
@@ -1886,7 +1838,7 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
                {
                  Ptr<SSBProcessor> ssbProcessor = m_ssbRLMProcessorMap.at(cellIndex);
                  std::vector<std::pair<std::pair<SfnSf, uint16_t>, std::pair<double, BeamId>>> listOfRLMBeams;
-                 std::cout << Simulator::Now().GetSeconds() << ": NrUePhy:.ProcessSSBs: will find max SNR for each m_noOfBeamsTbRLM now: " << std::endl;
+
                  for (auto n = 0; n < m_noOfBeamsTbRLM; n++)
                  {
                    FindMaximumSNR(ssbProcessor, m_ssbRLMScanDirectionNumber, m_gnbSectorNumber, cellId, false);
@@ -1901,11 +1853,6 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
                }
 
                std::vector<struct OptimalRLMBeamStruct> bestBeams = RetrieveOptimalRlmBeams(gNBOptimalBeamMap, GetCellId());
-               std::cout << "  NrUePhy::ProcessSSBs: bestBeams size after complete report " << bestBeams.size() << std::endl;
-               for (auto beam : bestBeams)
-               {
-                std::cout << "   - best beam ID: " << beam.beamId << " . optimalBeamIndex " << beam.optimalBeamIndex << std::endl;
-               }
 
                // This contains the index of beams that have best characteristics
                std::vector<std::pair<uint8_t, uint16_t>> optimalBeamIndex;
@@ -1926,11 +1873,9 @@ NrUePhy::ProcessSSBs (Ptr<NrPssMessage> pssMsg)
                  // in that case, we need to signal that to that gNB
                  for (uint8_t i = 0; i < m_noOfBeamsTbRLM; i++)
                  {
-                  // Duringregular IA we would only end up here adter CheckIfSweepIsComplete() has been called.
+                  // During regular IA we would only end up here adter CheckIfSweepIsComplete() has been called.
                   // That is the place where we insert into m_beamsTbRLM.
-                   std::cout << "NrUePhy::ProcessSSBs: does m_beamsTbRLM contain entry for imsi " << m_imsi << std::endl;
-                   std::cout << bool(m_beamsTbRLM.find(m_imsi) != m_beamsTbRLM.end()) << std::endl;
-                   const uint8_t oldCellId = m_beamsTbRLM.at(m_imsi).at(i).first; // FIXME: getting out_of_range with labfIA
+                   const uint8_t oldCellId = m_beamsTbRLM.at(m_imsi).at(i).first;
                    auto it = std::find_if(optimalBeamIndex.begin(), optimalBeamIndex.end(), [&oldCellId](const std::pair<uint8_t, uint16_t> &p) { return p.first == oldCellId; });
                    // m_beamsTbRLM contains the old monitored gNBs, optimalBeamIndex only the new gNBs
                    if (it == optimalBeamIndex.end())
@@ -2025,11 +1970,9 @@ NrUePhy::CheckIfSweepIsComplete()
   m_IAalreadyTriggered = false;
   m_ssbRMCounter = 0;
   
-  // can not simply comment it out, UE does not connect
-  m_ueCphySapUser->SendOptimalBeamMapToLteCoordinator (cellOptimalBeamMap); // BINGO! TODO: we send stuff to coordinator here. Need reverse though
+  m_ueCphySapUser->SendOptimalBeamMapToLteCoordinator (cellOptimalBeamMap); // We send data to the LTE coordinator here.
   std::pair<uint8_t, BeamId> m_lastOptimalCellBeamPair = RetrieveOptimalGnbFromMap (cellOptimalBeamMap);
   // cellOptimalBeamMap contains the BeamId of the UE that should be used toward sthe max SNR cell
-  // labf: out of curiosity may print diff between m_lastOptimalCellBeamPair and REM-commanded cell/beam
 
 
   if (m_minCSIRSFromServingGnb == 4)
@@ -2040,8 +1983,7 @@ NrUePhy::CheckIfSweepIsComplete()
       m_beamsTbRLM.at(m_imsi).erase(m_beamsTbRLM.at(m_imsi).begin() + m_noOfBeamsTbRLM,
                                     m_beamsTbRLM.at(m_imsi).begin() + m_beamsTbRLM.at(m_imsi).size());
     }
-    //else if (m_lastOptimalCellBeamPair.first == 10) // FIXME: do we need m_amountOfGnbs here?
-    else if (m_lastOptimalCellBeamPair.first == m_amountOfGnbs) // FIXME: do we need m_amountOfGnbs here?
+    else if (m_lastOptimalCellBeamPair.first == m_amountOfGnbs)
     {
       m_beamsTbRLM.at(m_imsi).erase(m_beamsTbRLM.at(m_imsi).begin(), m_beamsTbRLM.at(m_imsi).begin() + 9 * m_noOfBeamsTbRLM);
     }
@@ -2064,7 +2006,6 @@ NrUePhy::CheckIfSweepIsComplete()
     }
 
     m_beamsTbRLM.erase(m_imsi);
-    std::cout << "NrUePhy::CheckIfSweepIsComplete: inserting into m_beamsTbRLM for IMSI " << m_imsi << std::endl;
     m_beamsTbRLM.insert({m_imsi, tmp_beamsTbRLM});
   }
 
@@ -2089,16 +2030,10 @@ NrUePhy::CheckIfSweepIsComplete()
     }
   }
 
-  // std::cout << "NrUePhy: calling createBFV from CheckIfSweepIsComplete." << std::endl;
-
-  // std::cout << "NrUePhy: current beamforming vector: " << std::endl;
-  // labf: TODO: replace this by commanding a Beam from REM on LTE CO
-  // THis creats a BFV towards the best Cell that will become a serving cell after IA
+  // This call creates a BFV towards the best Cell that will become a serving cell after IA
   m_currBeamformingVector = BeamformingVector (
       CreateDirectionalBfv (m_beamManager->GetAntennaArray (), m_lastOptimalCellBeamPair.second.GetSector (),
       m_lastOptimalCellBeamPair.second.GetElevation (), false), m_lastOptimalCellBeamPair.second);
-  std::cout << "NrUePhy::CheckIfSweepIsComplete: after IA m_currBeamformingVector is being set to "<< std::endl;
-  std::cout << "   sector: " << m_lastOptimalCellBeamPair.second.GetSector () << ", elevation: " << m_lastOptimalCellBeamPair.second.GetElevation () << std::endl;
 
   BeamSweepTraceParams params;
   params.imsi = m_imsi;
@@ -2114,8 +2049,6 @@ NrUePhy::CheckIfSweepIsComplete()
   {
     if (m_registeredEnb.find (cellOptimalBeamMapIt->first) != m_registeredEnb.end ())
     {
-      std::cout << "NrUePhy: calling createBFV from CheckIfSweepIsComplete nested." << std::endl;
-
       // Here we create the BFV for each cell from which we received SSBs. We save best available beam towards each gNB.
       BeamformingVector bfvToGnb = BeamformingVector (
           CreateDirectionalBfv (m_beamManager->GetAntennaArray (),
@@ -2124,8 +2057,6 @@ NrUePhy::CheckIfSweepIsComplete()
                                 cellOptimalBeamMapIt->second.at(0).second.second); 
       
       // This creates a BFV towards each gNB in the simulation.
-      std::cout << "NrUePhy:CheckIfSweepIsComplete: after IA the following sector and elevation were derived to be the best ones:" << std::endl;
-      std::cout << "   cell: " << (int)cellOptimalBeamMapIt->first << " sector: " << cellOptimalBeamMapIt->second.at(0).second.second.GetSector () << ", elevation: " << cellOptimalBeamMapIt->second.at(0).second.second.GetElevation () << std::endl; 
       m_beamManager->SaveBeamformingVector (bfvToGnb, m_registeredEnb.find(cellOptimalBeamMapIt->first)->second);
     }
   }
@@ -2133,13 +2064,11 @@ NrUePhy::CheckIfSweepIsComplete()
   if (m_ueCphySapUser->IsRrcIdleStart()) // checks if RRC is IDLE_RANDOM_ACCESS
   {
     // same condition thats tested in LTE coordinator for handovers
-    // my: check if the found best cell has SNR above RLF threshold
     if (10 * log10(cellOptimalBeamMap.at(m_lastOptimalCellBeamPair.first).at(0).second.first) > 5)
     {
       m_beamManager->SetSector(m_lastOptimalCellBeamPair.second.GetSector(),
                               m_lastOptimalCellBeamPair.second.GetElevation());
 
-      //std::cout << " !!! NrUePhy::CheckIfSweepIsComplete: calling ReEstablishConnectionWithCell for " << (int)m_lastOptimalCellBeamPair.first << std::endl;
       ReEstablishConnectionWithCell(m_lastOptimalCellBeamPair.first);
 
       RadioLinkMonitoringTraceParams rlmParams;
@@ -2151,7 +2080,7 @@ NrUePhy::CheckIfSweepIsComplete()
     // SNR of best cell is 5 dB or lower
     else
     {
-      // new IA will be started
+      // New IA will be started
       Simulator::Schedule(MilliSeconds(10), &NrUePhy::SetIAStateOfAllGnbs, this, false);
     }
   }
@@ -2166,16 +2095,12 @@ NrUePhy::CheckIfSweepIsComplete()
   }
 }
 
-// labf: FIXME: re-cehck if something else can be removed or needs to be added here.
 void
 NrUePhy::RlmInitAfterRemIA()
 {
-  //TODO: REM might send N beams that are good enough to start keeping track of them here.
   m_txSSBCounterPerRx = 0;
 
   NS_LOG_UNCOND ("IMSI " << m_imsi << " received the best beam from the LTE CO REM.");
-  // std::map<uint8_t, std::vector<std::pair<std::pair<SfnSf, uint16_t>, std::pair<double, BeamId>>>>
-  //               cellOptimalBeamMap = RetrieveCellOptimalMap ();
 
   m_IAperformed = false;
   m_conveyPacketsToMac = true;
@@ -2195,48 +2120,8 @@ NrUePhy::RlmInitAfterRemIA()
     }
 
     m_beamsTbRLM.erase(m_imsi);
-    std::cout << "NrUePhy::RlmInitAfterRemIA: inserting dummy info into m_beamsTbRLM for IMSI " << m_imsi << std::endl;
     m_beamsTbRLM.insert({m_imsi, tmp_beamsTbRLM});
   }
-
-  // FIXME: we might want to implement something like the code below
-  // We do not have any guarantees that REM will deliver a link above RLF.
-  // Also, when position and REM will become erroneous, we might need to fallback to sweeping for IA.
-
-  // if (m_ueCphySapUser->IsRrcIdleStart()) // checks if RRC is IDLE_RANDOM_ACCESS
-  // {
-  //   // same condition thats tested in LTE coordinator for handovers
-  //   // my: check if the found best cell has SNR above RLF threshold
-  //   if (10 * log10(cellOptimalBeamMap.at(m_lastOptimalCellBeamPair.first).at(0).second.first) > 5)
-  //   {
-  //     m_beamManager->SetSector(m_lastOptimalCellBeamPair.second.GetSector(),
-  //                             m_lastOptimalCellBeamPair.second.GetElevation());
-
-  //     //std::cout << " !!! NrUePhy::CheckIfSweepIsComplete: calling ReEstablishConnectionWithCell for " << (int)m_lastOptimalCellBeamPair.first << std::endl;
-  //     ReEstablishConnectionWithCell(m_lastOptimalCellBeamPair.first);
-
-  //     RadioLinkMonitoringTraceParams rlmParams;
-  //     rlmParams.imsi = m_imsi;
-  //     rlmParams.m_radioLinkMonitoringOrigin = RadioLinkMonitoringTraceParams::HANDOVER_AFTER_UE_IA_SWEEP;
-  //     rlmParams.targetCellId = m_lastOptimalCellBeamPair.first;
-  //     m_radioLinkMonitoringTrace(rlmParams);
-  //   }
-  //   // SNR of best cell is 5 dB or lower
-  //   else
-  //   {
-  //     // new IA will be started
-  //     Simulator::Schedule(MilliSeconds(10), &NrUePhy::SetIAStateOfAllGnbs, this, false);
-  //   }
-  // }
-  // else if (m_lastOptimalCellBeamPair.first != GetCellId())
-  // {
-  //   // A BeamTracking sweep has been conducted and the best cell is not the currently serving one.
-  //   // Keep the gNBs in IA state. Handover is scheduled via LTE coordinator.
-  // }
-  // else
-  // {
-  //   Simulator::Schedule(MilliSeconds(10), &NrUePhy::SetIAStateOfAllGnbs, this, false);
-  // }
 }
 
 std::map<uint8_t, std::vector<std::pair<std::pair<SfnSf, uint16_t>, std::pair<double, BeamId>>>>
@@ -2246,7 +2131,7 @@ NrUePhy::RetrieveCellOptimalMap ()
   auto rxSectorNumber = m_ueBeamVectorList.size();
 
   std::map<uint8_t, Ptr<SSBProcessor>>::iterator cellIteratorFirst = m_cellIDSSBMap.begin();
-  NS_ASSERT_MSG (cellIteratorFirst != m_cellIDSSBMap.end(), "SSB Error, Map empty"); // FIMXE: now we fail this
+  NS_ASSERT_MSG (cellIteratorFirst != m_cellIDSSBMap.end(), "SSB Error, Map empty");
   Ptr<SSBProcessor> ssbProcessorFirst = cellIteratorFirst->second;
 
 
@@ -2266,9 +2151,7 @@ NrUePhy::RetrieveCellOptimalMap ()
   for (std::map<uint8_t, Ptr<SSBProcessor>>::iterator cellIterator = m_cellIDSSBMap.begin(); cellIterator != m_cellIDSSBMap.end(); ++cellIterator)
   {
     Ptr<SSBProcessor> ssbProcessor = cellIterator->second;
-    std::cout << "NrUePhy::RetrieveCellOptimalMap: cell id of ssbProcessor: " << (int)ssbProcessor->m_cellId << std::endl;
     std::vector<std::pair<std::pair<SfnSf, uint16_t>, std::pair<double, BeamId>>> listOfRLMBeams;
-    //std::cout << "m_noOfBeamsTbRLM 3: " << std::to_string(m_noOfBeamsTbRLM) << std::endl;
     for (auto rlmIndex = 0; rlmIndex < m_noOfBeamsTbRLM; rlmIndex++)
     {
       FindMaximumSNR (ssbProcessor, rxSectorNumber, txSectorNumber, cellIterator->first, true);
@@ -2303,9 +2186,6 @@ NrUePhy::RetrieveOptimalGnbFromMap (std::map<uint8_t, std::vector<std::pair<std:
     }
   }
 
-  std::cout << "NrUePhy::RetrieveOptimalGnbFromMap: maxSnrCell is " << (int)maxSnrCell << " with BeamId " << cellOptimalGnbMap[maxSnrCell].at(0).second.second << std::endl;
-  // TODO: we might want to trace this and compare to what REM delivers? 
-  // Us cellOptimalGnbMap[maxSnrCell].at(0).second.second the BeamId of UE or gNB?
   return std::pair<uint8_t, BeamId> (maxSnrCell, cellOptimalGnbMap[maxSnrCell].at(0).second.second);
 }
 
@@ -2430,7 +2310,6 @@ NrUePhy::SetPHYEpcHelper (Ptr<EpcHelper> epcHelper)
 void
 NrUePhy::DoStartBeamSweep (NrPhy::BeamSweepType beamSweepType)
 {
-  std::cout << "NrUePhy::DoStartBeamSweep: called with sweep type " << beamSweepType << " (0 - IA, 1 - Tracking)" << std::endl;
   // If we are not doing IA right now
   if (!m_IAperformed)
   {
@@ -2453,7 +2332,6 @@ NrUePhy::DoStartBeamSweep (NrPhy::BeamSweepType beamSweepType)
         //m_ueCphySapUser->SendUeDeregisterToGnb ();
         //DoSetCellId (0);
         break;
-      // LAMM: BINGO?!?!?! This is something related to tracking. We want to optimize tracking.
       case BeamSweepType::BeamTracking:
         // Called from LteUeRrc::DoRecvUeDeRegistrationUpdate when sweep is necessary but no RLF occurs
         // forward packets to MAC layer
@@ -2463,7 +2341,6 @@ NrUePhy::DoStartBeamSweep (NrPhy::BeamSweepType beamSweepType)
         m_cellIDSSBMap.clear ();  
         m_recvCSIMap.clear ();
         m_ssbRLMProcessorMap.clear();
-        std::cout << "NrUePhy::DoStartBeamSweep: m_ssbRLMProcessorMap cleared " << std::endl;
         m_txSSBCounterPerRx = 0;
         //m_ueCphySapUser->SendUeDeregisterToGnb ();
         //DoSetCellId (0);
@@ -2491,7 +2368,6 @@ NrUePhy::DoStartBeamSweep (NrPhy::BeamSweepType beamSweepType)
         m_phyIdealBeamformingHelper->AddBeamformingTask (enbIt->second, ueNetDev);
         newBeamId = m_beamManager->GetBeamId (enbIt->second);
         newBeamIdEnb = enbIt->second->GetPhy(0)->GetBeamManager ()->GetBeamId (ueNetDev);
-        std::cout << "NrUePhy: calling createBFV from DOStartBeamSweep.  tmp bfvs" << std::endl;
 
         auto tempBfv = BeamformingVector (CreateDirectionalBfv (m_beamManager->GetAntennaArray (),
               prevBeamId.GetSector (), prevBeamId.GetElevation ()), prevBeamId);
@@ -2602,8 +2478,6 @@ NrUePhy::AdjustAntennaForBeamSweep ()
         {
           m_beamManager->SetSector (ssbRLMBeam.GetSector (), ssbRLMBeam.GetElevation ());
         }
-
-        // std::cout << "NrUePhy::AdjustAntennaForBeamSweep: ssbRLMBeam is now " << ssbRLMBeam << std::endl; 
       }
     }
 
@@ -2681,7 +2555,6 @@ NrUePhy::ReEstablishConnectionWithCell (uint8_t cellId)
 void 
 NrUePhy::FinishIdealBeamforming ()
 {  
-  // std::cout << "NrUePhy::FinishIdealBeamforming: is called" << std::endl;
   if (m_cellIdealSNRMap.size () == m_amountOfGnbs)
   {
     // iterate over all available gNBs and make change beams of UEs and gNBs to point towards each other
@@ -2690,15 +2563,11 @@ NrUePhy::FinishIdealBeamforming ()
       auto newBeamId = m_cellIdealSNRMap.at (enbIt->first).second;
       auto newBeamIdEnb = m_tempBeamIdStorageEnb.at (enbIt->first);
 
-      std::cout << "NrUePhy: calling createBFV from FinishIdealBeamforming.  tmp bfvs" << std::endl;
 
       auto tempBfv = BeamformingVector (CreateDirectionalBfv (m_beamManager->GetAntennaArray (),
           newBeamId.GetSector (), newBeamId.GetElevation ()), newBeamId);
       auto tempBfvEnb = BeamformingVector (CreateDirectionalBfv (enbIt->second->GetPhy(0)->GetBeamManager ()->GetAntennaArray (),
           newBeamIdEnb.GetSector (), newBeamIdEnb.GetElevation ()), newBeamIdEnb);
-
-      std::cout << "NrUePhy::FinishIdealBeamforming" << std::endl;
-      std::cout << "  - tempBfv: " << tempBfv.second << std::endl;
 
 
       m_beamManager->SaveBeamformingVector (tempBfv, enbIt->second);
@@ -2832,7 +2701,6 @@ NrUePhy::FindMaximumSNR (Ptr<SSBProcessor> ssbProcessor, uint16_t rxSectorNumber
   }
   ssbProcessor->m_maxSNRPerCell = maxSNRforCell;
   ssbProcessor->rxBeamtxSectorSNRMap.at(maxRxTxPair.first).at (maxRxTxPair.second) = 1e-20;
-  std::cout << "NrUePhy::FindMaximumSNR: cellID " << (int)ssbProcessor->m_cellId << " maxSNRforCell " << maxSNRforCell << std::endl; 
 }
 
 void 
@@ -2871,21 +2739,12 @@ NrUePhy::DoConfigureCSIRSResources (std::pair<uint8_t, uint8_t> startingSubframe
   }
 }
 
-// labf: this function gets SNR of each received CSI-RS and selects best beam from those measurements
-// With labf, we do not need to search for this beam, we directly take what was commanded?
-// But we probably still need to either report trace the SNR of how the link is doing with the commanded beam?
 void
 NrUePhy::ProcessCSIRSs (Ptr<NrCSIRSMessage> csiRSMsg)
 {
   if (!m_IAperformed) // If UE is still in IA, skip all of this
   {
     auto cellIdFromMsg = csiRSMsg->GetCellId (); // fetch the cell ID
-
-    // if (cellIdFromMsg == 6 || cellIdFromMsg == 7 || cellIdFromMsg == 9 || cellIdFromMsg == 10)
-    // {
-    //   //std::cout << "Got CSI RS from cell 3 at " << Simulator::Now().GetSeconds() << ". UE serving cell is " << GetCellId() << std::endl;
-    //   std::cout << " NrUePhy: Current beam for cell " << (int)cellIdFromMsg << " is " << m_beamManager->GetBeamId (m_registeredEnb.at(cellIdFromMsg)) << std::endl;
-    // }
 
     // if the cell ID mathces the serving cell ID, or if UE is set to monitor beams from other cells (4 here)
     if (cellIdFromMsg == GetCellId () || m_minCSIRSFromServingGnb < 4)
@@ -2927,7 +2786,7 @@ NrUePhy::ProcessCSIRSs (Ptr<NrCSIRSMessage> csiRSMsg)
 
         // for each beam that we monitor(?), we select up to m_noOfBeamsTbRLM highest SNR beams
         // additional beams are stored in m_subOptimalCSIBeamMap
-        // theay are stored at m_csiRSTbReported and  m_subOptimalCSIBeamMap
+        // they are stored at m_csiRSTbReported and  m_subOptimalCSIBeamMap
         for (uint8_t n = 0; n < m_noOfBeamsTbRLM; n++)
         {
           auto maxSNR = 0.0;
@@ -2986,24 +2845,12 @@ NrUePhy::ProcessCSIRSs (Ptr<NrCSIRSMessage> csiRSMsg)
             maxSNRCellMap.insert({cellIdOfReport, snrOfReport});
             BeamId maxSNRBeamId = m_csiRSTbReported.at(m_imsi).at(csiIter).second.first;
             BeamId oldBeamId = m_beamManager->GetBeamId(m_registeredEnb.at(GetCellId()));
-
-            // creating new beamforming vector with highest SNR beam
-            std::cout << Simulator::Now().GetSeconds() << std::endl;
-            // std::cout << "NrUePhy: calling createBFV from ProcessCSIRSs" << std::endl;
             BeamformingVector maxSNRBfv = BeamformingVector(
                 CreateDirectionalBfv(m_beamManager->GetAntennaArray(), maxSNRBeamId.GetSector(),
                                      maxSNRBeamId.GetElevation(), false),
                 maxSNRBeamId);
-            // maxSNRBfv is pair of complex vector and beam id
-            // if (m_imsi == 1)
-            // {
-            //   std::cout << "NrUePhy::ProcessCSIRSs: maxSNRBfv for m_imsi " << m_imsi << " is set to be"
-            //   " sector " << maxSNRBfv.second.GetSector() << ", elevation " << maxSNRBfv.second.GetElevation() << std::endl;
-            // }
-            // applying the best beam to UE antenna
-            // labf. No CSI-RS.caused beam updates desired
+
             m_beamManager->SaveBeamformingVector(maxSNRBfv, m_registeredEnb.at(cellIdOfReport));
-            //std::cout << " +!+ NrUePhy: from " << (int)cellIdOfReport << ": saved beam id sector " << maxSNRBeamId.GetSector() << " elev: " << maxSNRBeamId.GetElevation() << std::endl;
 
             // If we are handling the beam from the serving cell now and it was changed to a better one,
             // use this beam abd send tracing event
@@ -3013,8 +2860,8 @@ NrUePhy::ProcessCSIRSs (Ptr<NrCSIRSMessage> csiRSMsg)
               if (maxSNRBeamId != oldBeamId)
               {
                 // If we use Location-aided Beamforming, beam selection is controlled by REM.
-                // Also, this should never be reached in LABF, as we do not send CSI-RS.
-                if (!m_useLABF)
+                // Also, this should never be reached in REMLAB, as we do not send CSI-RS.
+                if (!m_useREMLAB)
                 {
                   NS_ASSERT_MSG(m_registeredEnb.find(GetCellId()) != m_registeredEnb.end(), "NrUePhy::ProcessCSIRSs m_registeredEnb could not find Gell ID");
                   m_beamManager->ChangeBeamformingVector(m_registeredEnb.at(GetCellId()));
@@ -3043,7 +2890,6 @@ NrUePhy::ProcessCSIRSs (Ptr<NrCSIRSMessage> csiRSMsg)
 void 
 NrUePhy::ResetSSBRLMProcessor ()
 {
-  std::cout << "NrUePhy::ResetSSBRLMProcessor: SSB RLM processor map cleared" << std::endl;
   m_ssbRLMProcessorMap.clear();
 }
 
@@ -3102,12 +2948,21 @@ NrUePhy::GetUeVerticalAngleStep () const
   return m_ueElevationAngleStep;
 }
 
-// labf
+// REMLAB
 void
 NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
 {
-  std::cout << "NrUePhy::DoSetRemBeam: setting commanded beam" << std::endl;
-  // TODO: comment out all other occurences of beam adjustments
+  // Test code for sweeeping at every command received from LTE CO
+  // Schedule a sweep whenever we receive a command. 
+  // std::cout << "DEBUG: NrUePhy:DoSetRemBeam: scheduling a sweep" << std::endl;
+  // m_IAalreadyTriggered = true;
+  // m_cellIDSSBMap.clear ();
+  // m_recvCSIMap.clear ();
+  // Simulator::Schedule (MicroSeconds(5), &NrUePhy::RaiseNotifyOutOfSyncNr, this);
+  // Simulator::Schedule (m_beamSweepTimer.Get(), &NrUePhy::DoSetPhyIAFlag, this, false);
+
+  // return;
+
   uint16_t remCell = linkData.bestTxId;
 
   // Check if UE is in IA. If so, we need to do REM-IA.
@@ -3127,8 +2982,8 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
       if (bestRemAzimuth >= entry.first.first && bestRemAzimuth <= entry.first.second)
       {
         remSector = entry.second;
-        std::cout << " UE: AoD azimuth " << bestRemAzimuth << " maps to sector " << (unsigned)entry.second << std::endl;
-        std::cout << " UE: remSector is " << remSector << std::endl;
+        NS_LOG_DEBUG(" UE: AoD azimuth " << bestRemAzimuth << " maps to sector " << (unsigned)entry.second);
+        NS_LOG_DEBUG(" UE: remSector is " << remSector);
         break;
       }
     }
@@ -3138,8 +2993,8 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
       if (bestRemElevation >= entry.first.first && bestRemElevation <= entry.first.second)
       {
         remElevation = entry.second;
-        std::cout << " UE: AoD elevation " << bestRemElevation << " maps to elevation " << (double)entry.second << std::endl;
-        std::cout << " UE: remElevation is " << remElevation << std::endl;
+        NS_LOG_DEBUG(" UE: AoD elevation " << bestRemElevation << " maps to elevation " << (double)entry.second);
+        NS_LOG_DEBUG(" UE: remElevation is " << remElevation);
         break;
       }
     }
@@ -3148,17 +3003,14 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
       CreateDirectionalBfv(m_beamManager->GetAntennaArray(),
                           remSector,
                           remElevation, true),
-        // m_imsiOptimalBeamId.at(linkData.imsi)); // wrong, we set the sector and elev of currentl used beam ID, not the REM one
       BeamId(remSector, remElevation));
     
     m_currBeamformingVector = remBfv;
 
     // set the newly created current beam for the serving gNB
-    std::cout << "NrUePhy::DoSetRemBeam: setting beam " << m_currBeamformingVector.second << " for cell " << remCell << std::endl;
     m_beamManager->SaveBeamformingVector (m_currBeamformingVector, m_registeredEnb.find(remCell)->second);
     // Use the saed vector for current setup, as we are communicating with the cell m_registeredEnb.at(remCell). 
     m_beamManager->ChangeBeamformingVector(m_registeredEnb.at(remCell));
-    std::cout << "NrUePhy::DoSetRemBeam: beam successfully saved and changed" << std::endl;
 
     BeamSweepTraceParams params;
     params.imsi = m_imsi;
@@ -3169,27 +3021,21 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
 
     m_beamSweepTrace(params);
 
-    std::cout << "NrUePhy::DoSetRemBeam: tracing parameters created and passed to m_beamSweepTrace" << std::endl;
-    // test: switch RRCto IdleRandomAccess
-    m_ueCphySapUser->SwitchToIdleRA();
+    m_ueCphySapUser->SwitchToIdleRA(); // implemented for REMLAB
     // Attach to the cell
-    // RRC is in state 0 at this point. 
-    if (m_ueCphySapUser->IsRrcIdleStart ())
+    // RRC is in state 0 at this point if m_ueCphySapUser->SwitchToIdleRA() NOT called
+    // If called, State is actualy IDLE_RANDOM_ACCESS which is 7.
+    if (m_ueCphySapUser->IsRrcIdleStart ())  // This should always be the case after calling m_ueCphySapUser->SwitchToIdleRA() 
     {
       // originally RRC is IDLE after the UE sweeps
-      std::cout << "NrUePhy: calling ReEstablishConnectionWithCell for cell " << remCell << std::endl;
-      // This seems to be the correct method that should trigger a conneciton, but RRC is not idle for some reason?
       ReEstablishConnectionWithCell (remCell);
     }
     else
     {
-      // we end up here
-      std::cout << "NrUePhy: scheduling NrUePhy::SetIAStateOfAllGnbs " << std::endl;
       Simulator::Schedule (MilliSeconds (10), &NrUePhy::SetIAStateOfAllGnbs, this, false);
     }
-    // TODO: Notify LTE CO?
-    // FIXME: need to call something like NrUePhy::CheckIfSweepIsComplete()
-    // we need to populate at least m_beamsTbRLM with entries, otherwise we std::out_of_range after IA
+
+    // Initialize memebers relevant for RLM
     RlmInitAfterRemIA();
 
     // Imitiating the part of NrUePhy::ProcessSSBs that we skip due to REM IA   
@@ -3215,8 +3061,8 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
     if (bestRemAzimuth >= entry.first.first && bestRemAzimuth <= entry.first.second)
     {
       remSector = entry.second;
-      std::cout << " UE: AoD azimuth " << bestRemAzimuth << " maps to sector " << (unsigned)entry.second << std::endl;
-      std::cout << " UE: remSector is " << remSector << std::endl;
+      NS_LOG_DEBUG(" UE: AoD azimuth " << bestRemAzimuth << " maps to sector " << (unsigned)entry.second);
+      NS_LOG_DEBUG(" UE: remSector is " << remSector);
       break;
     }
   }
@@ -3226,8 +3072,8 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
     if (bestRemElevation >= entry.first.first && bestRemElevation <= entry.first.second)
     {
       remElevation = entry.second;
-      std::cout << " UE: AoD elevation " << bestRemElevation << " maps to elevation " << (double)entry.second << std::endl;
-      std::cout << " UE: remElevation is " << remElevation << std::endl;
+      NS_LOG_DEBUG(" UE: AoD elevation " << bestRemElevation << " maps to elevation " << (double)entry.second);
+      NS_LOG_DEBUG(" UE: remElevation is " << remElevation);
       break;
     }
   }
@@ -3239,7 +3085,6 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
       CreateDirectionalBfv(m_beamManager->GetAntennaArray(),
                           remSector,
                           remElevation, true),
-        // m_imsiOptimalBeamId.at(linkData.imsi)); // wrong, we set the sector and elev of currentl used beam ID, not the REM one
       BeamId(remSector, remElevation));
 
   if (remBfv.first == currentBfvForGnb)
@@ -3248,11 +3093,9 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
   m_currBeamformingVector = remBfv;
 
   // set the newly created current beam for the serving gNB
-  std::cout << "NrUePhy::DoSetRemBeam: setting beam " << m_currBeamformingVector.second << " for cell " << /*GetCellId()*/remCell << std::endl;
   m_beamManager->SaveBeamformingVector (m_currBeamformingVector, m_registeredEnb.find(/*GetCellId()*/remCell)->second);
   // Use the saed vector for current setup, as we are communicating with the cell m_registeredEnb.at(GetCellId()). 
   m_beamManager->ChangeBeamformingVector(m_registeredEnb.at(/*GetCellId()*/remCell));
-  std::cout << "NrUePhy::DoSetRemBeam: beam successfully saved and changed" << std::endl;
 
   BeamSweepTraceParams params;
   params.imsi = m_imsi;
@@ -3262,8 +3105,6 @@ NrUePhy::DoSetRemBeam(LteRrcSap::LinkData linkData)
   params.foundElevation = remElevation;
 
   m_beamSweepTrace(params);
-
-  std::cout << "NrUePhy::DoSetRemBeam: tracing parameters created and passed to m_beamSweepTrace" << std::endl;
 }
 
 }

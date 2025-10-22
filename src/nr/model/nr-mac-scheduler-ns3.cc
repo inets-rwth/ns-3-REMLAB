@@ -156,9 +156,30 @@ NrMacSchedulerNs3::GetTypeId (void)
                    MakeIntegerAccessor (&NrMacSchedulerNs3::SetMaxDlMcs,
                                          &NrMacSchedulerNs3::GetMaxDlMcs),
                    MakeIntegerChecker<int8_t> (-1,30))
+    // Location-aided Beam Management
+    .AddAttribute ("UseREMLAB",
+                   "Use REM-based cell and beam selection for UEs and gNBs. No SSB scheduling.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&NrMacSchedulerNs3::SetREMLABFlag,
+                                         &NrMacSchedulerNs3::GetREMLABFlag),
+                   MakeBooleanChecker ())
   ;
 
   return tid;
+}
+
+void
+NrMacSchedulerNs3::SetREMLABFlag(bool value)
+{
+  NS_LOG_FUNCTION (this);
+  m_useREMLAB = value;
+}
+
+bool
+NrMacSchedulerNs3::GetREMLABFlag() const
+{
+  NS_LOG_FUNCTION (this);
+  return m_useREMLAB;
 }
 
 /**
@@ -1782,7 +1803,7 @@ NrMacSchedulerNs3::DoScheduleUl (const std::vector <UlHarqInfo> &ulHarqFeedback,
                 +ulAssignationStartPoint.m_sym << ")");
 
   // If this slot is used for SSB reception, don't allow scheduling!
-  if (!m_macSchedSapUser->IsSSBRequired(ulSfn))
+  if (m_useREMLAB || !m_macSchedSapUser->IsSSBRequired(ulSfn))
   {
     if (activeUlHarq.size() > 0)
     {
@@ -1971,6 +1992,7 @@ NrMacSchedulerNs3::DoScheduleDl (const std::vector <DlHarqInfo> &dlHarqFeedback,
   uint8_t dataSymPerSlot = m_macSchedSapUser->GetSymbolsPerSlot () - m_dlCtrlSymbols;
 
   uint8_t dlSymAvail = dataSymPerSlot - ulAllocations.m_totUlSym;
+
   PointInFTPlane dlAssignationStartPoint (0, m_dlCtrlSymbols);
 
   NS_LOG_DEBUG ("Scheduling DL for slot " << dlSfnSf <<
@@ -1978,7 +2000,7 @@ NrMacSchedulerNs3::DoScheduleDl (const std::vector <DlHarqInfo> &dlHarqFeedback,
                 " Active Beams DL HARQ: " << activeDlHarq.size () <<
                 " sym available: " << static_cast<uint32_t> (dlSymAvail) <<
                 " starting from sym " << static_cast<uint32_t> (m_dlCtrlSymbols));
-  if (!m_macSchedSapUser->IsSSBRequired (dlSfnSf))
+  if (m_useREMLAB || !m_macSchedSapUser->IsSSBRequired (dlSfnSf))
   {
     if (activeDlHarq.size () > 0)
       {
@@ -2035,7 +2057,7 @@ NrMacSchedulerNs3::DoScheduleDl (const std::vector <DlHarqInfo> &dlHarqFeedback,
     {
       dlSymAvail -= 13;
     }
-    
+    // dlSymAvail is 0 at this point as FormSSBlock takes up all symbols
   }
 
   return (dataSymPerSlot - ulAllocations.m_totUlSym) - dlSymAvail;

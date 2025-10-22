@@ -412,9 +412,8 @@ private:
 
   void DoUpdateSuboptimalCSIRSBeams (uint64_t imsi, uint16_t sector, double elevation);
 
-  //test
+  // REMLAB
   void DoForwardUePositionReportToREM(uint16_t rnti, LteRrcSap::PositionReport msg);
-  std::pair<uint16_t, double> DoGetCurrentGnbBeamIdOfImsi(uint64_t imsi);
   void DoSetREMBeam(LteRrcSap::LinkData linkData);
 
   /**

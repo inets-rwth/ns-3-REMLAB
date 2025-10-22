@@ -34,16 +34,23 @@ uint32_t runNumber = 1;
 /*
 **********************************************************************************************************
 *   The following ns-3 code is based on the proposed work in the paper:
-*   [1] A. Ichkov, A. Schott, P. Mähönen and L. Simić, 'flexRLM: Flexible Radio Link Monitoring
-*       for Multi-User Downlink Millimeter-Wave Networks', to be presented in Proc. IEEE INFOCOM 2023.
+*   [1] A. Schott, A. Palovandov, E. Tosi, M. Petrova, and L. Simić, 'REMLAB: Full-Stack ns-3 Framework
+*       for  REM-Based Location-Aided Beam Management in 5G-NR Networks', accepted for IEEE MobiWac 2025
+* 
+*   This framework enables REM-based location-aided beam management in millimeter-wave end-to-end network
+*   simulations. If you use this module in your research, please cite [1].
 *
-*   This code enables multi-user downlink millimeter-wave end-to-end network simulations utilizing
+*
+*   This code also enables multi-user downlink millimeter-wave end-to-end network simulations utilizing
 *   5G-NR beam management downlink operations. It is based on the flexRLM framework, 
 *   a coordinator-based flexible radio link monitoring (RLM) framework that enables joint 
-*   beam management and low complexity load-balancing, as proposed in [1].
-*
-*   This code also enables single-user network simulations based on the proposed work in the paper:
-*   [2] A. Ichkov, O. Atasoy, P. Mähönen and L. Simić, "Full-Stack ns-3 Framework for the 
+*   beam management and low complexity load-balancing, as proposed in [2].
+*   This code also enables single-user network simulations based on the proposed work in the [3].
+* 
+*   [2] A. Ichkov, A. Schott, P. Mähönen and L. Simić, 'flexRLM: Flexible Radio Link Monitoring
+*       for Multi-User Downlink Millimeter-Wave Networks', to be presented in Proc. IEEE INFOCOM 2023.
+*       (https://ieeexplore.ieee.org/document/10229071)
+*   [3] A. Ichkov, O. Atasoy, P. Mähönen and L. Simić, "Full-Stack ns-3 Framework for the 
 *       Evaluation of 5G-NR Beam Management in Non-Standalone Downlink Millimeter-Wave Networks," 
 *       in Proc. IEEE WoWMoM 2022, Belfast UK, June 2023. (https://ieeexplore.ieee.org/document/9842765)
 *
@@ -96,9 +103,9 @@ uint32_t runNumber = 1;
 *                             |                  Beam management strategy                     |
 *     Associated variables    |   Ideal   |    Default 5G-NR      |         flexRLM           |
 *     ----------------------------------------------------------------------------------------|
-*     realisticIA             |   false   |         true          |          true             | <- enable SSB
-*     rlmOn                   |   false   |         true          |          true             | <- enable sending CSIRS
-*     ssbRlmOn                |   false   |      true / false     |          true             | <- enable UE to analyse SSBs for update the CSI RS beam candidates
+*     realisticIA             |   false   |         true          |          true             | <- Enable SSB
+*     rlmOn                   |   false   |         true          |          true             | <- Enable sending CSI-RS
+*     ssbRlmOn                |   false   |      true / false     |          true             | <- Enable UE to analyse SSBs for update the CSI RS beam candidates
 *     completeSSBDuration (ms)|   0 / 20  |           -           |           -               |
 *     minCSIRSFromServiceGnb  |   -       |           4           |          0-3              |
 *     loadBalancing           |   -       |           -           |      true / false         |
@@ -128,10 +135,13 @@ using namespace ns3;
 
 // LOAD LOCATION INFORMATION OF ENBS
 
-// The following offsets are relevant only for the case where REM and walk paths are in different
-// coordinate systems. If this is not the case, set these offsets to 0.
-const int enbXOffset = 0; // 128 from matlab plots of gNB positions on top of building outlines
-const int enbYOffset = 0; // 121 from matlab plots of gNB positions on top of building outlines
+// The following offsets are relevant only for the case where REM, gNB locations
+// and walk paths are in different coordinate systems.
+// If this is not the case, set these offsets to 0.
+const int enbXOffset = 0;
+const int enbYOffset = 0; 
+const int xOffsetForRecoveryAlgorithm = 128;
+const int yOffsetForRecoveryAlgorithm = 121;
 
 void
 LoadEnbLocations (Ptr<ListPositionAllocator> enbPositionAlloc)
@@ -267,7 +277,10 @@ GetUdpThroughput (ApplicationContainer appContainer, std::vector<Ptr<OutputStrea
   Simulator::Schedule (Seconds (0.04), &GetUdpThroughput, appContainer, vectorOfStream);
 }
 
-// Locaiton-aided Beamforming
+// ===================================================
+// Callbacks related to Locaiton-aided Beam Management
+// ===================================================
+
 std::vector<Ptr<OutputStreamWrapper>> streamVector_uePos;
 static void
 LogUePositionReport(std::string context, UeCompletePositionReport report)
@@ -286,13 +299,12 @@ LogUePositionReport(std::string context, UeCompletePositionReport report)
 }
 
 // RemBeamSelectionTrace
-// labf: logging of BeamId mismatch for erroneous positions
+// REMLAB: logging of BeamId mismatch for erroneous positions
 std::vector<Ptr<OutputStreamWrapper>> streamVector_beamOffsets;
 
 static void
 LogRemBeamIdOffets(std::string context, RemBeamSelectionTraceParams report)
 {
-  std::cout << "LogRemBeamIdOffets for imsi " << report.imsi << std::endl; 
   (void) context;
   // vectorOfStream contains entries for each UE. Note that vector entries are 0-indexed
 
@@ -308,19 +320,18 @@ LogRemBeamIdOffets(std::string context, RemBeamSelectionTraceParams report)
       << (int)report.ueSectorOffset << std::endl;
 }
 
-// labf: logging of error applied on top of REM entries. For each cell it will store the error
+// REMLAB: logging of error applied on top of REM entries. For each cell it will store the error
 // magnitude applied on top of the position
 std::vector<Ptr<OutputStreamWrapper>> remMeasurementErrorOutputStream;
 static void 
 LogRemMeasurementError(std::string context, std::map<Vector, std::pair<double, double>> remMeasError)
 {
   (void) context;
-  std::cout << "LogRemMeasurementError received map of size " << remMeasError.size() << std::endl;
   for (const auto& [pos, entry] : remMeasError)
   {
     *(remMeasurementErrorOutputStream.front())->GetStream()
         << pos.x << "," << pos.y << "," << pos.z << std::endl // position
-        << entry.first << "," << entry.second << std::endl    // x,y error applied to this position
+        << entry.first << "," << entry.second << std::endl // x,y error applied to this position
         << std::sqrt(entry.first*entry.first + entry.second*entry.second) << std::endl; // error magnitude
   }
 }
@@ -330,11 +341,10 @@ static void
 LogRemNonEmptyEntries(std::string context, std::vector<Vector> remNonEmptyEntries)
 {
   (void) context;
-  std::cout << "LogRemNonEmptyEntries received vector of size " << remNonEmptyEntries.size() << std::endl;
   for (const auto& pos : remNonEmptyEntries)
   {
     *(remNonEmptyEntriesStream)->GetStream()
-        << pos.x << "," << pos.y << "," << pos.z << std::endl; // position
+        << pos.x << "," << pos.y << "," << pos.z << std::endl; // position of the non-empty REM entry
   }
 }
 
@@ -345,10 +355,10 @@ LogOrnsteinUhlenbeckParams(std::string context, OrnsteinUhlenbeckErrorTraceParam
 {
   (void) context;
   *(ornsteinOutputTrace.front())->GetStream()
-        << params.m_theta << "," << params.m_mu << "," << params.m_sigma << ","// parameters
-        << params.m_deltaT << "," << params.m_deltaW  << ","  // x,y error applied to this position
-        << params.m_Xprev << "," << params.m_Xnext  << ","  // x,y error applied to this position
-        << params.m_restoringTerm << "," << params.m_stochasticTerm << std::endl;    // x,y error applied to this position
+        << params.m_theta << "," << params.m_mu << "," << params.m_sigma << ","
+        << params.m_deltaT << "," << params.m_deltaW  << ","
+        << params.m_Xprev << "," << params.m_Xnext  << ","
+        << params.m_restoringTerm << "," << params.m_stochasticTerm << std::endl;
 }
 
 std::vector<Ptr<OutputStreamWrapper>> lteDelayStream;
@@ -358,12 +368,6 @@ LogLteRrcDelay(std::string context, uint64_t imsi, int delay)
   // Vector entries are 0-indexed
   *(lteDelayStream.at(imsi-1))->GetStream()
       << Simulator::Now().GetSeconds() << "," << imsi << "," << delay << std::endl;
-}
-
-static void
-LogRrcDelay(uint64_t imsi, int delay)
-{
-  std::cout << "LteDelay: UE IMSI: " << imsi << " delay: " << delay << std::endl;
 }
 
 std::vector<Ptr<OutputStreamWrapper>> remQueryRecoveryStream;
@@ -469,11 +473,12 @@ NotifyHandoverEndOkEnb (std::string context,
             << std::endl;
 }
 
-// labf: course change tracing
+// ===========================
+// REMLAB: course change tracing
+// ===========================
 
-// Store last reported position per UE.
-// Key is the UE Node ID.
-// Value is a pair of UE Net Device ID and it corresponding position.
+// ueLastPosition stires last reported position per UE.
+// Map key is the UE Node ID. Map values is a pair of UE Net Device ID and the corresponding position.
 std::map<uint16_t, std::pair<uint16_t, Vector>> ueLastPosition;
 
 std::regex pattern("/NodeList/(\\d+)/\\$ns3::MobilityModel/CourseChange");
@@ -500,14 +505,10 @@ CourseChange(std::string context, Ptr<const MobilityModel> model)
   if (position != ueLastPosition.at(ueNodeId).second)
   {
     NS_LOG_UNCOND(context <<
-		  	  " x = " << position.x << ", y = " << position.y);
-    std::cout << context << " x = " << position.x << ", y = " << position.y << std::endl;
+		  	  " x = " << position.x << ", y = " << position.y << ", z = " << position.z);
 
     Ptr<LteUeRrc> ueRrc = DynamicCast<NrUeNetDevice>(ueNetDev.Get(ueLastPosition.at(ueNodeId).first))->GetRrc();
-    std::cout << "UE " << ueNodeId << " is trying to report the position" << std::endl;
     ueRrc->SendPositionReport(position);
-    // Simulator::Schedule(Seconds(2.0), &LteUeRrc::TestSendCtrlMessage, ueRrc);
-
     ueLastPosition.at(ueNodeId).second = position;
   }
 }
@@ -525,8 +526,7 @@ UePositionReport(std::string context, UeCompletePositionReport report)
   // TODO: for each IMSI create a file. Write all values into that file as CSV
 }
 
-// BeamSweepTraceParams is the type of member TracedCallback <BeamSweepTraceParams> m_beamSweepTrace;
-// that is delcared in nr-gnb-phy.h
+// BeamSweepTraceParams is a "TracedCallback <BeamSweepTraceParams> m_beamSweepTrace" and is delcared in nr-gnb-phy.h
 void
 BeamSweepTrace(std::string context, BeamSweepTraceParams params)
 {
@@ -538,7 +538,6 @@ BeamSweepTrace(std::string context, BeamSweepTraceParams params)
   std::cout << " - snrBeforeSweep: " << params.snrBeforeSweep << std::endl;
   std::cout << " - snrDiffBeforeHO: " << params.snrDiffBeforeHO << std::endl;
 }
-
 
 void SetParameters();
 
@@ -554,7 +553,16 @@ double bandwidth = 400e6; // System Bandwidth
 double txPower = 15.0;    // txPower = 30 dBm for ray-tracing channel input
                           // (total txPower setting is 15 dBm + 15 dBm (from the ray-tracing simulations)
 uint32_t packetSize = 1400; // Packet size in bytes
-DataRate dataRate = DataRate("400Mb/s"); // Requested data rate per user in Mbps
+DataRate dataRate = DataRate("2Gb/s"); // Requested data rate per user in Mbps
+
+// ==============================
+// Location-aided Beam Management
+// ==============================
+// For the proper REMLAB operation, you need to adjust parameters of the RemSinrEstimator
+// instantiated in the LteEnbRrc to match PHY layer parameters defined above.
+// Antenna parameters such as amount of horizontal and vertical elements have to be adjusted as well.
+// Moreover, the mapping between angles and sectors has to be adjusted in LteEnbRrc and RemSinrEstimator
+// if the different antenna configuration is used.
 
 /*
  *   The simulation parameters are set according to our paper 'flexRLM: Flexible Radio Link
@@ -569,51 +577,49 @@ DataRate dataRate = DataRate("400Mb/s"); // Requested data rate per user in Mbps
 double simTime = 240; // in seconds
 uint8_t numOfUes = 1;
 uint64_t numOfGnbs = 15; // Amount of 5G NR gNBs in the simulation
-/*
- *                           Table I. Beam management strategies and configuration parameters
- *                              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
- *                             |                  Beam management strategy                     |
- *     Associated variables    |   Ideal   |    Default 5G-NR      |         flexRLM           |
- *     ----------------------------------------------------------------------------------------|
- *     realisticIA             |   false   |         true          |          true             | <- SSB
- *     rlmOn                   |   false   |         true          |          true             | <- CSI-RS
- *     ssbRlmOn                |   false   |      true / false     |          true             | <- Feedback SSB reports to coordinator for thresholds?
- *     completeSSBDuration (ms)|   0 / 20  |           -           |           -               |
- *     minCSIRSFromServiceGnb  |   -       |           4           |          0-3              |
- *     loadBalancing           |   -       |           -           |      true / false         |
- *     TODO: disableSweepDuringBeamTracking - after IA, no sweeps. Beam Pairs determined from REM
- *
-*/
 bool realisticIA = true; // if false, csiRS-related error occurs ans imsi is not found
-bool rlmOn = true;
+bool rlmOn = false;
 bool ssbRlmOn = false;
 Time completeSSBDuration = MilliSeconds (0.0);
 uint8_t minCSIRSFromServingGnb = 4; // was 2
-bool loadBalancing = false;  // optional for flexRLM, not available in Ideal or Default 5G-NR. was true
-bool adaptiveBF = true;     // set this to FALSE for using the Ideal beam management!!! (leave to true for the others)
+bool loadBalancing = false;  // optional for flexRLM, not available in Ideal or Default 5G-NR.
+bool adaptiveBF = false;     // set this to FALSE for using the Ideal beam management!!! (leave to true for the others)
 bool BFdelay = false;       // leave this to FALSE
 bool omniFallback = false;  // leave this to FALSE
 
-// Location-aided Beamforming
-// If this is set to true, UE and gNB beams and handovers will be managed depending on REM.
-// CSI-RS will not be queued by gNBs and RLM logic will be bypassed(?)
-// Handovers are still threshold-based, but are now controlled by REM.
-bool useLABF = true;
+// ==============================
+// Location-aided Beam Management
+// ==============================
+// If "useREMLAB" is set to true, selection of UE and gNB beams and handovers will be managed according to the REMLAB scheme.
+// CSI-RS will not be queued by gNBs and RLM logic will be bypassed.
+// Handovers are still threshold-based, but are now controlled by REMLAB.
+bool useREMLAB = true;
+/// Defines whether a random delay value is applied to the scheduling of LTE RRC messages.
 bool lteRrcDelay = false;
-bool uePositionError = false;
-bool measurementRem = false; // No effect if "loadMeasurementRemFromFile" is true.
+/// Defines whether the UE is affected by location errors generated by the selected error model. 
+bool uePositionError = true;
+/// Defines whether the "measurement" REM is loaded directly from a provided file.
+/// If false, the "measurement" REM will be generated by applying a Normal-distributed error on top of 
+/// each REM entry's location.
 bool loadMeasurementRemFromFile = false;
+/// Defines whether "ideal" or "measurement" REM is used for the simulation.
+/// This parameter has no effect if "loadMeasurementRemFromFile" is "true".
+bool measurementRem = false;
+/// Period in seconds for reporting UE location to the LTE coordinator.
 double uePositionReportPeriod = 1;
-bool useLabfImmediateHandovers = true;
-uint8_t handoverHysterisisMaxCounter = 1;
-bool enableLabfRecoveryAlgorithm = false;
+/// Defines whether the UE should immediatelly handover to the gNB with the strongest SNR according to REMLAB.
+bool useREMLABImmediateHandovers = false;
+/// Defines the maximum amount of algorithm iterations (received location reports) from each UE
+/// that the UE may remain served by the sub-optimal gNB.
+uint8_t handoverHysterisisMaxCounter = 0;
+/// Defines whether the recovery algorithm is used to recovery from a failed REM query.
+bool enableRemlabRecoveryAlgorithm = false;
 
 // CSI-RS configuration (default settings for numOfUes = 20; please refer to the details above for other cases)
 uint16_t csiRSPeriodicity = 23;
 uint16_t csiRSOffset = 3;
 uint16_t maxCSIRSResourcesPerFrame = 2;
 uint8_t noOfBeamsTbRLM = maxCSIRSResourcesPerFrame*2;
-// uint16_t ssbRLMTXDirections = 10; // same as number of gNBs
 uint16_t ssbRLMTXDirections = numOfGnbs; // same as number of gNBs
 
 // antenna configuraton
@@ -649,13 +655,12 @@ bool udpLatencyLogging = true;
 AsciiTraceHelper asciiTraceHelper;
 std::string path = "./out/test/"; // default path for saving simulation output results
 bool harqEnabled = true;          // enable/disable hybrid automatic repeat request (HARQ)
+  // UE walk parameters, load UE information from folder
+std::string input_raytracing_folder = "src/nr/model/Raytracing_UE_set/";
 
 void LoadSingleUeWalk(std::string walkNumber)
 {
-  // UE walk parameters, load UE information from folder:
-  std::string input_raytracing_folder = "src/nr/model/Raytracing_UE_set/";
-
-  std::ifstream infile("src/nr/model/Raytracing_UE_set/" + walkNumber + "_cords.txt");
+  std::ifstream infile(input_raytracing_folder + walkNumber + "_cords.txt");
   std::string sLine;
   getline(infile, sLine);
 
@@ -682,18 +687,11 @@ main (int argc, char *argv[])
   ns3::RngSeedManager::SetSeed(time(NULL)); // Use system time for randomness
   ns3::RngSeedManager::SetRun(runNumber); // e.g., 1, 2, 3, ...
 
-  if (useLABF)
+  if (useREMLAB)
   {
-    // FIXME: re-check whether this makes any sense. I do not think this is needed.
-    //ssbRlmOn = true; // We still seem to get measurement reports that are needed for handover algo. That is good.
-    ssbRlmOn = false; // We still seem to get measurement reports that are needed for handover algo. That is good.
-
-    // We might actually still want to use that for updating the info about channel
-    // while we are waiting for position reports. Eg for adjustment within same gNB. 
-    // Need to validate how much time is required to assemble the whole SSB report. If it is longer than
-    // 1 second, then there is no point in using that.
-
-    // Handovers probably need to be left for REM
+    // As we do not rely on CSI-RS reports when using Location-aided Beam Management, 
+    // we do not need to analyse SSBs to update the CSI RS beam candidates.
+    ssbRlmOn = false;
   }
 
   // antenna configuraton
@@ -714,14 +712,12 @@ main (int argc, char *argv[])
     NS_ABORT_MSG ("Undefined Antenna Configuration");
   }
   
-  // ==================================
-  // Block for reading all UE walk IDs
-  // ==================================
-  // // UE walk parameters, load UE information from folder:
-  std::string input_raytracing_folder = "src/nr/model/Raytracing_UE_set/";
+  // ==================================================================
+  // Block for reading all UE walk IDs from the input_raytracing_folder
+  // ==================================================================
 
   // struct dirent *entry;
-  // DIR *dir = opendir("src/nr/model/Raytracing_UE_set/");
+  // DIR *dir = opendir(input_raytracing_folder);
 
   // while((entry = readdir(dir)) != NULL)
   // {
@@ -730,7 +726,7 @@ main (int argc, char *argv[])
   //   {
   //     walkId.push_back(stoi(filename));
 
-  //     std::ifstream infile("src/nr/model/Raytracing_UE_set/"+filename);
+  //     std::ifstream infile(input_raytracing_folder + filename);
   //     std::string sLine;
   //     getline(infile, sLine);
 
@@ -744,72 +740,10 @@ main (int argc, char *argv[])
   // }
   // closedir(dir);
 
-  // ==========================
-  // Read only specific walk ID
-  // ==========================
-
+  // ===========================================================
+  // Read only specific walk ID from the input_raytracing_folder
+  // ===========================================================
   LoadSingleUeWalk("2000");
-  //LoadSingleUeWalk("1234"); // Test coords
-
-  // Half circle around gNB6 starting south, east, north. 5 seconds in the middle of each sector with 40m distance to gNB
-  //LoadSingleUeWalk("1235"); // expecting all sectors from gNB on the path
-
-  // Same half circle, but UE stands further away at 400,250. Somewhere in the open area between  gnb 9 and 10
-  //LoadSingleUeWalk("1236");
-  
-  // Near gNB 7
-  //LoadSingleUeWalk("1237"); // This one works fine gNB set to sector 20. UE to 6
-  
-  // UE 1 that should always be connected to gNB 6? No, see printout?
-  // LoadSingleUeWalk("940");
-  //LoadSingleUeWalk("9940"); // only second half of walk where connectivity was lost
-  // UE 1 test for assert failed due to unknonw RNTI 2 in lte-rrc-protocol-ideal
-  // LoadSingleUeWalk("941");
-  // Testing the drop of SNR and crash of 1ue on 940
-  // LoadSingleUeWalk("942");
-  // Tsting yet anothr out of range crash at 449.18,267.2
-  // LoadSingleUeWalk("943");
-  // Testing the out of range crash at roughly 414.23 , 344.63
-  // LoadSingleUeWalk("944");
-
-  // UE 16 that walks around gNB6 starting from NB9, then gNB7, then ends at gNB3
-  //LoadSingleUeWalk("2029");
-
-  // Half circle radius 80
-  // LoadSingleUeWalk("1240");
-  // Test for multi-user sim wjere each stands on center of the sector
-  // LoadSingleUeWalk("1250");
-  // LoadSingleUeWalk("1251");
-  // LoadSingleUeWalk("1252");
-  // LoadSingleUeWalk("1261");
-  // LoadSingleUeWalk("1262");
-  // LoadSingleUeWalk("1263");
-  // LoadSingleUeWalk("1264");
-
-  // Tests with gNB 3 at 305,456. Going up left down.
-  // Radius 15 meters. Should not end up in a building anywhere.
-  // One point is inside the building and made problems
-  // LoadSingleUeWalk("3330");
-
-  // Tests with gNB 3 at 305,456. Going up left down.
-  // Radius 10 meters. Should not end up in a building anywhere.
-  //LoadSingleUeWalk("3331");
-
-  // Around gNB6 provided by Aron
-  // LoadSingleUeWalk("100"); // meant to be run with all gNBs
-  // extend cords from aron to move more than 180 degs
-  // starts behind the gNB south. gets sector 3
-  // LoadSingleUeWalk("101"); // meant to be run with all gNBs
-
-  // 101 but with first coords fixed at same y as aron has.
-  // Attempt to avoid handover to gnb 7
-  //LoadSingleUeWalk("102"); // connects to gnb9 in the beginning
-
-  // IA on each sector
-  // LoadSingleUeWalk("103");
-  // LoadSingleUeWalk("104"); // single point in sec15 of gNB8
-
-  // LoadSingleUeWalk("940");
 
   mkdir(path.c_str(),S_IRWXU);
   SetParameters();
@@ -819,7 +753,7 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::ThreeGppSpectrumPropagationLossModel::AmountOfGnbs", UintegerValue(numOfGnbs));
   Config::SetDefault ("ns3::NrUePhy::AmountOfGnbs", UintegerValue(numOfGnbs));
 
-  // Controls whether we apply a delay for transmistion of labf-related RRC messages.
+  // Controls whether we apply a delay for transmistion of REMLAB-related RRC messages.
   Config::SetDefault ("ns3::nrUeRrcProtocolIdeal::EnableLteRrcDelay", BooleanValue(lteRrcDelay));
   // In the following, set RaySourceType to "Inventory" if Inventory.txt is going to be used. Else, set it to "EnbTraceData"
   // "InventoryWiIS" configures the model to load files from the "src/nr/model/Raytracing_alternative/" folder
@@ -829,6 +763,10 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::ThreeGppSpectrumPropagationLossModel::RaySourceType", StringValue("Inventory"));
   // Set the TX power of gNBs. This will be used to derive the Path Loss value for WiIS REM construction.
   Config::SetDefault ("ns3::ThreeGppSpectrumPropagationLossModel::GnbTxPower", DoubleValue(txPower));
+
+  // Disable SSB scheduling if REMLAB is enabled
+  Config::SetDefault ("ns3::NrMacSchedulerNs3::UseREMLAB", BooleanValue(useREMLAB));
+  
   // Defines whether we parse the REM from inventory file and apply an error, or load it directly from a separate file.
   Config::SetDefault ("ns3::LteEnbRrc::LoadMeasurementRemFromFile", BooleanValue(loadMeasurementRemFromFile));
   // Does not have any effect in the current state. There are no connections established by the LteHelper.
@@ -838,20 +776,21 @@ main (int argc, char *argv[])
   // Controls whether we use "measurement" REM, which was affected by position errors during its construction
   Config::SetDefault ("ns3::LteEnbRrc::UseMeasurementREM", BooleanValue(measurementRem));
   // Decide whether to immediatelly HO to the best cell reported by REM
-  Config::SetDefault ("ns3::LteEnbRrc::UseLabfImmediateHandovers", BooleanValue(useLabfImmediateHandovers));
-  // Controls the amount of UE position reports that the UE may be served by a suboptimal gNB if UseLabfImmediateHandovers is enabled.
-  Config::SetDefault ("ns3::LteEnbRrc::LabfHandoverThreshold", UintegerValue(handoverHysterisisMaxCounter));
+  Config::SetDefault ("ns3::LteEnbRrc::UseREMLABImmediateHandovers", BooleanValue(useREMLABImmediateHandovers));
+  // Controls the amount of UE position reports that the UE may be served by a suboptimal gNB if UseREMLABImmediateHandovers is enabled.
+  Config::SetDefault ("ns3::LteEnbRrc::REMLABHandoverThreshold", UintegerValue(handoverHysterisisMaxCounter));
   // Define whether we try to find closest non-emtpy REM point if the query for reported position is empty.
-  Config::SetDefault ("ns3::LteEnbRrc::EnableRemRecoveryAlgorithm", BooleanValue(enableLabfRecoveryAlgorithm));
+  Config::SetDefault ("ns3::LteEnbRrc::EnableRemRecoveryAlgorithm", BooleanValue(enableRemlabRecoveryAlgorithm));
 
   // Offset for gNB locations due to different coordinate systems in the walk paths, gNB locations and WiIS REM.
   // This is used for recovery algorithm calculations
-  Config::SetDefault ("ns3::LteEnbRrc::GnbLocationOffsetX", IntegerValue(128));
-  Config::SetDefault ("ns3::LteEnbRrc::GnbLocationOffsetY", IntegerValue(121));
+  Config::SetDefault ("ns3::LteEnbRrc::GnbLocationOffsetX", IntegerValue(xOffsetForRecoveryAlgorithm));
+  Config::SetDefault ("ns3::LteEnbRrc::GnbLocationOffsetY", IntegerValue(yOffsetForRecoveryAlgorithm));
 
   // Define the frequency of UE position reports
   Config::SetDefault ("ns3::LteUeRrc::PositionReportPeriodSeconds", DoubleValue(uePositionReportPeriod));
 
+  // REM entries will only be loaded for provided gNB IDs. All REM entries are loaded if gnbCellIds is "boost::none".
   boost::optional<std::vector<uint16_t>> gnbCellIds
       = boost::none;
       //= boost::make_optional(std::vector<uint16_t>{4,5,7,9,10,13,14,15,16,17,18,19,20,24,26});
@@ -867,15 +806,15 @@ main (int argc, char *argv[])
   NS_LOG_UNCOND ("BFdelay: " << BFdelay);
   NS_LOG_UNCOND ("[not relevant] CSI-RS from serving gNB: " << minCSIRSFromServingGnb);
   NS_LOG_UNCOND ("[not relevant] Load balancing: " << loadBalancing);
-  NS_LOG_UNCOND ("Use Location-aided Beamforming: " << useLABF);
+  NS_LOG_UNCOND ("Use Location-aided Beam Management: " << useREMLAB);
   NS_LOG_UNCOND ("Amount of gNBs: " << numOfGnbs);
   NS_LOG_UNCOND ("EnableLteRrcDelay: " << lteRrcDelay);
   NS_LOG_UNCOND ("ApplyErrorModelToUePositions: " << uePositionError);
   NS_LOG_UNCOND ("UseMeasurementREM: " << measurementRem);
   NS_LOG_UNCOND ("PositionReportPeriodSeconds: " << uePositionReportPeriod);
-  NS_LOG_UNCOND ("UseLabfImmediateHandovers: " << useLabfImmediateHandovers);
-  NS_LOG_UNCOND ("LabfHandoverThreshold: " << static_cast<int>(handoverHysterisisMaxCounter));
-  NS_LOG_UNCOND ("EnableLabfRecoveryAlgorithm: " << enableLabfRecoveryAlgorithm);
+  NS_LOG_UNCOND ("UseREMLABImmediateHandovers: " << useREMLABImmediateHandovers);
+  NS_LOG_UNCOND ("REMLABHandoverThreshold: " << static_cast<int>(handoverHysterisisMaxCounter));
+  NS_LOG_UNCOND ("EnableRemlabRecoveryAlgorithm: " << enableRemlabRecoveryAlgorithm);
 
   // setup the Nr simulation
   Ptr<NrHelper> nrHelper = CreateObject<NrHelper> ();
@@ -927,7 +866,7 @@ main (int argc, char *argv[])
     ueNodes.Get (i)->GetObject<MobilityModel> ()->SetPosition (Vector (ueX[i], ueY[i], 1.5));
   }
 
-  // labf: Tracing of UE position changes
+  // REMLAB: Tracing of UE position changes
   for (uint32_t ueId = 0; ueId < ueNodes.GetN(); ueId++)
   {
     std::ostringstream oss;
@@ -984,10 +923,6 @@ main (int argc, char *argv[])
   ueNetDev = nrHelper->InstallUeDevice (ueNodes, allBwps); // These are NR UEs??
   // InstallLteEnbDevice creates LTE PHY, MAC, RRC for the eNB. This should in theory create everything we need below RRC/RLC?
   NetDeviceContainer lteNetDev = nrHelper->InstallLteEnbDevice (lteEnbNodes);
-  // FIXME: do we need an additional installation of ueNodes in lteHelper for UE<->LTECO link?
-  // Might need to comment out some wtuff in LteHelper, as we would then have duplicate conmnections 
-  // to EPC
-  // auto test = lteHelper->InstallUeDevice(ueNodes); // This seems to work withou crashing for at least 1 UE 
 
   // create PGW
   Ptr<Node> pgw = epcHelper->GetPgwNode ();
@@ -1081,28 +1016,6 @@ main (int argc, char *argv[])
 
   // Optionally change cell IDs of gNBs
   Ptr<NetDevice> lteEnbNetDevice = lteEnbNodes.Get (0)->GetDevice (0);
-  // if (gnbCellIds)
-  // {
-  //   for(size_t i=0;i<gnbNodes.GetN();++i)
-  //   {
-  //     Ptr<NrGnbNetDevice> gnbDevice = DynamicCast<NrGnbNetDevice>(gnbNodes.Get(i)->GetDevice(0));
-  //     if(gnbDevice)
-  //     {
-  //       NS_LOG_UNCOND("Changing Cell ID for gNB from " << i << " to " << gnbCellIds.get().at(i));
-  //       gnbDevice->SetCellId(gnbCellIds.get().at(i));
-  //     }
-  //   }
-  //   // Need to change the cell ID of the LTE CO as well. But it does not have a method for that?
-  //   Ptr<Node> enbNode = lteEnbNodes.Get(0);  // Get the first eNB node
-  //   Ptr<LteEnbNetDevice> enbDevice = DynamicCast<LteEnbNetDevice>(enbNode->GetDevice(0));
-
-  //   if (enbDevice)
-  //   {
-  //       enbDevice->SetCellId(gnbCellIds.get().back() + 1);
-  //       NS_LOG_UNCOND("Changed LTE CO Cell ID to " << enbDevice->GetCellId());
-  //   }
-  // }
-  // interconnect all cells
 
   for(size_t i=0;i<gnbNodes.GetN()-1;++i)
   {
@@ -1113,6 +1026,7 @@ main (int argc, char *argv[])
   }
   
   uint16_t lteCellId = lteEnbNodes.Get(0)->GetDevice (0)->GetObject <LteEnbNetDevice> ()->GetCellId();
+  std::cout << "LTE coordinator received Cell ID " << lteCellId << std::endl;
 
   // Connect all gNBs to the LTE coordinator
   for(size_t i=0; i<gnbNodes.GetN(); i++)
@@ -1143,16 +1057,12 @@ main (int argc, char *argv[])
 
   for(uint32_t i=0; i<ueNetDev.GetN(); i++)
   {
-    std::cout << "UE " << i << " is getting attached to the LTE CO" << std::endl;
-    // FIXME? This only creates an RRC-level link that is fine only for Ideal RRC protocol?
-    // NrHelper::InstallSingleLteEnbDevice perfroms all PHY, MAC, RLC, RRC connections for eNB, but not for UEs.
-    
     nrHelper->AttachToLteCoordinator (ueNetDev.Get(i)->GetObject <NetDevice> (), lteEnbNetDevice);
   }
 
   // lteEnbNetDevice is the coordinator and the only one who needs REM.
   Ptr<LteEnbRrc> coordinatorEnbRrc;
-  if (useLABF)
+  if (useREMLAB)
   {
     Ptr<OutputStreamWrapper> outStream = asciiTraceHelper.CreateFileStream(path + "RemMeasurementError.txt");
     remMeasurementErrorOutputStream.emplace_back(outStream);
@@ -1163,12 +1073,8 @@ main (int argc, char *argv[])
     coordinatorEnbRrc = lteEnbNodes.Get(0)->GetDevice (0)->GetObject <LteEnbNetDevice>()->GetRrc();
     if (coordinatorEnbRrc != nullptr)
     {
-      std::cout << "lteEnbNetDevice casted to LteEnbRrc" << std::endl;
       coordinatorEnbRrc->LoadRem("src/nr/model/Raytracing/");
-      
-      coordinatorEnbRrc->MakeEnbACoordinator(); // FIXME: this should not be required
-      coordinatorEnbRrc->StoreGnbPositions(gnbCellIds); // This must be called for the labf recovery algorithm
-      std::cout << "LTE coordinator cell ID " << coordinatorEnbRrc->GetCellId() << std::endl;
+      coordinatorEnbRrc->StoreGnbPositions(gnbCellIds); // This must be called for the REMLAB recovery algorithm
    }
   }
 
@@ -1180,7 +1086,6 @@ main (int argc, char *argv[])
   {
     for(uint32_t i=0; i<ueNetDev.GetN(); i++)
     {
-      std::cout << "UE " << i << " is getting an Error model" << std::endl;
       Ptr<OrnsteinUhlenbeckErrorModel> latitudeErrorModel
           = CreateObject<OrnsteinUhlenbeckErrorModel>(6.2, 1.5, 3.8);
       Ptr<OrnsteinUhlenbeckErrorModel> longitudeErrorModel
@@ -1232,7 +1137,7 @@ main (int argc, char *argv[])
     Ptr<OutputStreamWrapper> ipStream = asciiTraceHelper.CreateFileStream (path + "DlIpStats" + std::to_string (imsi) + ".txt");
     streamVector_ip.emplace_back(ipStream);
   }
-  Simulator::Schedule (Seconds (0.3), &GetThroughput, &flowmon, monitor, streamVector_ip);
+  Simulator::Schedule (Seconds (0.001), &GetThroughput, &flowmon, monitor, streamVector_ip);
 
   if (ipLatencyLogging)
   {
@@ -1267,7 +1172,7 @@ main (int argc, char *argv[])
     streamVector.emplace_back (udpStream);
   }
 
-  // 0.00025 is derived from observing cout from within LteEnbRrc::ForwardUePositionReportToREM
+  // 0.00025 is derived from observing std::cout from within LteEnbRrc::ForwardUePositionReportToREM
   Simulator::Schedule (Seconds(0.00025), &GetUdpThroughput, serverApps, streamVector);
 
   // connect custom trace sinks for RRC connection establishment and handover notification
@@ -1313,25 +1218,6 @@ main (int argc, char *argv[])
   {
     Ptr<OutputStreamWrapper> remQueryRecoveryTrace = asciiTraceHelper.CreateFileStream (path + "RemQueryRecovery" + std::to_string (imsi) + ".txt");
     remQueryRecoveryStream.emplace_back (remQueryRecoveryTrace);
-  }
-
-  // FIXME: this does not work
-  Ptr<Node> ueNode = ueNodes.Get(0); // Get the first UE node
-  Ptr<NrUeNetDevice> ueDevice = DynamicCast<NrUeNetDevice>(ueNode->GetDevice(0));
-  if (ueDevice)
-  {
-      Ptr<LteUeRrc> ueRrc = ueDevice->GetRrc(); // this works
-      Ptr<nrUeRrcProtocolIdeal> rrcProtocol = DynamicCast<nrUeRrcProtocolIdeal>(ueDevice->GetRrc());
-
-      if (rrcProtocol) // This fails
-      {
-          // Example: Enable tracing on "StateTransition" signal
-          rrcProtocol->TraceConnectWithoutContext("LteRrcDelay", MakeCallback(&LogRrcDelay));
-      }
-      else
-      {
-        std::cerr << "Failed to get NrUeRrcProtocolIdeal instance!" << std::endl;
-      }
   }
 
   Simulator::Stop (Seconds (simTime));
@@ -1464,11 +1350,11 @@ void SetParameters()
                       StringValue ("Real"));
   }
 
-  // Location-aided Beamforming
-  if (useLABF)
+  // Location-aided Beam Management
+  if (useREMLAB)
   {
-    Config::SetDefault("ns3::NrGnbPhy::UseLocationAidedBeamforming", BooleanValue(useLABF));
-    Config::SetDefault("ns3::NrUePhy::UseLocationAidedBeamforming", BooleanValue(useLABF));
-    Config::SetDefault("ns3::LteEnbRrc::UseLocationAidedBeamforming", BooleanValue(useLABF));
+    Config::SetDefault("ns3::NrGnbPhy::UseREMLAB", BooleanValue(useREMLAB));
+    Config::SetDefault("ns3::NrUePhy::UseREMLAB", BooleanValue(useREMLAB));
+    Config::SetDefault("ns3::LteEnbRrc::UseREMLAB", BooleanValue(useREMLAB));
   }
 }
